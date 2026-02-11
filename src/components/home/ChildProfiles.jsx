@@ -6,7 +6,7 @@ export default function ChildProfiles({ onAddChild }) {
 
   return (
     <div className="py-4">
-      <div className="flex items-center gap-4 overflow-x-auto scrollbar-hide pb-2 px-6">
+      <div className="flex items-center gap-4 overflow-x-auto scrollbar-hide pb-3 pl-7 pr-6">
         {state.children.map(child => {
           const isActive = child.id === state.activeChildId;
           return (
@@ -16,7 +16,7 @@ export default function ChildProfiles({ onAddChild }) {
               className="flex flex-col items-center gap-1.5 shrink-0 cursor-pointer"
             >
               <div
-                className={`w-16 h-16 rounded-full ${child.avatarColor} flex items-center justify-center transition-all ${
+                className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full ${child.avatarColor} flex items-center justify-center transition-all ${
                   isActive
                     ? 'ring-[3px] ring-sage-500 ring-offset-2 scale-105'
                     : 'opacity-60 hover:opacity-80'
@@ -50,7 +50,7 @@ export default function ChildProfiles({ onAddChild }) {
           onClick={onAddChild}
           className="flex flex-col items-center gap-1.5 shrink-0 cursor-pointer"
         >
-          <div className="w-16 h-16 rounded-full border-2 border-dashed border-sage-300 flex items-center justify-center hover:border-sage-500 hover:bg-sage-50 transition">
+          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full border-2 border-dashed border-sage-300 flex items-center justify-center hover:border-sage-500 hover:bg-sage-50 transition">
             <Plus className="w-5 h-5 text-sage-400" />
           </div>
           <span className="text-xs font-medium text-gray-400">Hinzufügen</span>

@@ -62,7 +62,8 @@ export default function HomePage() {
       {/* FAB - Add Meal */}
       <button
         onClick={() => navigate('/track')}
-        className="fixed bottom-24 right-6 w-14 h-14 bg-sage-500 hover:bg-sage-600 text-white rounded-full shadow-lg hover:shadow-xl flex items-center justify-center transition-all cursor-pointer z-30"
+        style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom, 0px) + 12px)' }}
+        className="fixed right-5 w-14 h-14 bg-sage-500 hover:bg-sage-600 text-white rounded-full shadow-lg hover:shadow-xl flex items-center justify-center transition-all cursor-pointer z-30"
       >
         <Plus className="w-6 h-6" />
       </button>
