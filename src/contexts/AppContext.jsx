@@ -238,12 +238,22 @@ export function AppProvider({ children: reactChildren }) {
             return; // Don't overwrite local — Firestore will trigger again after seeding
           }
           if (data.length > 0) {
-            rawDispatch({ type: 'SYNC_FIRESTORE', payload: { children: data } });
+            // Preserve local photoUrl (not stored in Firestore, base64 too large)
+            const mergedChildren = data.map(fsChild => {
+              const localChild = current.children.find(c => c.id === fsChild.id);
+              return { ...fsChild, photoUrl: localChild?.photoUrl || null };
+            });
+            rawDispatch({ type: 'SYNC_FIRESTORE', payload: { children: mergedChildren } });
           }
           break;
         case 'meals':
           if (data.length === 0 && current.meals.length > 0) return;
-          rawDispatch({ type: 'SYNC_FIRESTORE', payload: { meals: data } });
+          // Preserve local imageUrl (not stored in Firestore, base64 too large)
+          const mergedMeals = data.map(fsMeal => {
+            const localMeal = current.meals.find(m => m.id === fsMeal.id);
+            return { ...fsMeal, imageUrl: localMeal?.imageUrl || null };
+          });
+          rawDispatch({ type: 'SYNC_FIRESTORE', payload: { meals: mergedMeals } });
           break;
         case 'symptoms':
           if (data.length === 0 && current.symptoms.length > 0) return;
