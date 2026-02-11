@@ -1,4 +1,4 @@
-import { createContext, useContext, useReducer, useEffect, useRef } from 'react';
+import { createContext, useContext, useReducer, useEffect, useRef, useCallback } from 'react';
 import {
   saveChild, removeChild as removeChildFromDb, saveMeal,
   saveSymptom, removeSymptom as removeSymptomFromDb,
@@ -133,6 +133,25 @@ function syncToFirestore(username, action) {
   }
 }
 
+/**
+ * Upload all local data to Firestore if Firestore is empty.
+ * This handles the case where the user already has local data but Firestore
+ * was just enabled — we seed Firestore from localStorage.
+ */
+function seedFirestoreFromLocal(username, localState) {
+  if (!username) return;
+
+  if (localState.onboardingComplete || localState.activeChildId) {
+    saveUserSettings(username, {
+      onboardingComplete: localState.onboardingComplete,
+      activeChildId: localState.activeChildId,
+    });
+  }
+  localState.children.forEach(child => saveChild(username, child));
+  localState.meals.forEach(meal => saveMeal(username, meal));
+  localState.symptoms.forEach(symptom => saveSymptom(username, symptom));
+}
+
 export function AppProvider({ children: reactChildren }) {
   const [state, rawDispatch] = useReducer(appReducer, initialState, (init) => {
     const saved = localStorage.getItem('habeat-state');
@@ -147,12 +166,15 @@ export function AppProvider({ children: reactChildren }) {
   });
 
   const firestoreListening = useRef(false);
+  const seededRef = useRef(false);
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   // Wrapped dispatch that also syncs to Firestore
-  const dispatch = (action) => {
+  const dispatch = useCallback((action) => {
     rawDispatch(action);
-    syncToFirestore(state.currentUser, action);
-  };
+    syncToFirestore(stateRef.current.currentUser, action);
+  }, []);
 
   // Save to localStorage
   useEffect(() => {
@@ -165,23 +187,35 @@ export function AppProvider({ children: reactChildren }) {
     firestoreListening.current = true;
 
     const unsub = subscribeToUserData(state.currentUser, (type, data) => {
+      const current = stateRef.current;
+
       switch (type) {
         case 'settings':
           rawDispatch({
             type: 'SYNC_FIRESTORE',
             payload: {
-              onboardingComplete: data.onboardingComplete ?? false,
-              activeChildId: data.activeChildId ?? null,
+              onboardingComplete: data.onboardingComplete ?? current.onboardingComplete,
+              activeChildId: data.activeChildId ?? current.activeChildId,
             },
           });
           break;
         case 'children':
-          rawDispatch({ type: 'SYNC_FIRESTORE', payload: { children: data } });
+          // If Firestore is empty but we have local data, seed Firestore
+          if (data.length === 0 && current.children.length > 0 && !seededRef.current) {
+            seededRef.current = true;
+            seedFirestoreFromLocal(current.currentUser, current);
+            return; // Don't overwrite local — Firestore will trigger again after seeding
+          }
+          if (data.length > 0) {
+            rawDispatch({ type: 'SYNC_FIRESTORE', payload: { children: data } });
+          }
           break;
         case 'meals':
+          if (data.length === 0 && current.meals.length > 0) return;
           rawDispatch({ type: 'SYNC_FIRESTORE', payload: { meals: data } });
           break;
         case 'symptoms':
+          if (data.length === 0 && current.symptoms.length > 0) return;
           rawDispatch({ type: 'SYNC_FIRESTORE', payload: { symptoms: data } });
           break;
       }
