@@ -15,6 +15,7 @@ const initialState = {
   activeChildId: null,
   meals: [],
   symptoms: [],
+  emergencyContacts: [],
   firestoreReady: false,
 };
 
@@ -85,6 +86,23 @@ function appReducer(state, action) {
         symptoms: state.symptoms.filter(s => s.id !== action.payload),
       };
 
+    case 'ADD_EMERGENCY_CONTACT':
+      return { ...state, emergencyContacts: [...state.emergencyContacts, action.payload] };
+
+    case 'UPDATE_EMERGENCY_CONTACT':
+      return {
+        ...state,
+        emergencyContacts: state.emergencyContacts.map(c =>
+          c.id === action.payload.id ? { ...c, ...action.payload } : c
+        ),
+      };
+
+    case 'REMOVE_EMERGENCY_CONTACT':
+      return {
+        ...state,
+        emergencyContacts: state.emergencyContacts.filter(c => c.id !== action.payload),
+      };
+
     case 'LOAD_STATE':
       return { ...state, ...action.payload };
 
@@ -120,6 +138,11 @@ function syncToFirestore(username, action) {
         break;
       case 'REMOVE_SYMPTOM':
         removeSymptomFromDb(username, action.payload);
+        break;
+      case 'ADD_EMERGENCY_CONTACT':
+      case 'UPDATE_EMERGENCY_CONTACT':
+      case 'REMOVE_EMERGENCY_CONTACT':
+        // Synced via useEffect on emergencyContacts
         break;
       case 'SET_ONBOARDING_COMPLETE':
         saveUserSettings(username, { onboardingComplete: true });
@@ -181,6 +204,13 @@ export function AppProvider({ children: reactChildren }) {
     localStorage.setItem('habeat-state', JSON.stringify(state));
   }, [state]);
 
+  // Sync emergency contacts to Firestore
+  useEffect(() => {
+    if (state.currentUser && state.firestoreReady) {
+      saveUserSettings(state.currentUser, { emergencyContacts: state.emergencyContacts });
+    }
+  }, [state.emergencyContacts, state.currentUser, state.firestoreReady]);
+
   // Subscribe to Firestore when logged in
   useEffect(() => {
     if (!state.loggedIn || !state.currentUser || firestoreListening.current) return;
@@ -196,6 +226,7 @@ export function AppProvider({ children: reactChildren }) {
             payload: {
               onboardingComplete: data.onboardingComplete ?? current.onboardingComplete,
               activeChildId: data.activeChildId ?? current.activeChildId,
+              ...(data.emergencyContacts ? { emergencyContacts: data.emergencyContacts } : {}),
             },
           });
           break;
