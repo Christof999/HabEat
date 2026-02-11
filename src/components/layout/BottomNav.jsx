@@ -1,9 +1,10 @@
-import { Home, CalendarDays, ShieldAlert, Settings } from 'lucide-react';
+import { Home, CalendarDays, Search, ShieldAlert, Settings } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 const navItems = [
   { icon: Home, label: 'Home', path: '/' },
   { icon: CalendarDays, label: 'Verlauf', path: '/history' },
+  { icon: Search, label: 'Detektiv', path: '/detective' },
   { icon: ShieldAlert, label: 'Notfall', path: '/emergency' },
   { icon: Settings, label: 'Settings', path: '/settings' },
 ];
@@ -21,7 +22,7 @@ export default function BottomNav() {
             <button
               key={item.path}
               onClick={() => navigate(item.path)}
-              className={`flex flex-col items-center gap-0.5 px-4 py-2 rounded-xl transition cursor-pointer ${
+              className={`flex flex-col items-center gap-0.5 px-2 py-2 rounded-xl transition cursor-pointer ${
                 isActive
                   ? 'text-sage-600'
                   : 'text-gray-400 hover:text-gray-600'

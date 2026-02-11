@@ -57,6 +57,20 @@ function appReducer(state, action) {
     case 'ADD_SYMPTOM':
       return { ...state, symptoms: [action.payload, ...state.symptoms] };
 
+    case 'UPDATE_SYMPTOM':
+      return {
+        ...state,
+        symptoms: state.symptoms.map(s =>
+          s.id === action.payload.id ? { ...s, ...action.payload } : s
+        ),
+      };
+
+    case 'REMOVE_SYMPTOM':
+      return {
+        ...state,
+        symptoms: state.symptoms.filter(s => s.id !== action.payload),
+      };
+
     case 'LOAD_STATE':
       return { ...state, ...action.payload };
 

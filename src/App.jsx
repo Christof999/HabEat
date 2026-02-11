@@ -5,6 +5,7 @@ import OnboardingPage from './pages/OnboardingPage';
 import HomePage from './pages/HomePage';
 import TrackingPage from './pages/TrackingPage';
 import HistoryPage from './pages/HistoryPage';
+import DetectivePage from './pages/DetectivePage';
 import EmergencyPage from './pages/EmergencyPage';
 import SettingsPage from './pages/SettingsPage';
 
@@ -20,6 +21,7 @@ function App() {
       <Route element={<AppShell />}>
         <Route path="/" element={<HomePage />} />
         <Route path="/history" element={<HistoryPage />} />
+        <Route path="/detective" element={<DetectivePage />} />
         <Route path="/emergency" element={<EmergencyPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>
