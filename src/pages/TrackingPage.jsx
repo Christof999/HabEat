@@ -1,10 +1,11 @@
 import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Camera, Image, Sparkles, Loader2, MapPin, StickyNote, Check } from 'lucide-react';
+import { ArrowLeft, Camera, Image, Sparkles, Loader2, MapPin, StickyNote, Check, AlertCircle } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
+import { analyzeImageWithGemini } from '../lib/gemini';
 
 export default function TrackingPage() {
-  const { state, dispatch } = useApp();
+  const { state, dispatch, activeChild } = useApp();
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
 
@@ -14,6 +15,7 @@ export default function TrackingPage() {
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analyzeError, setAnalyzeError] = useState(null);
 
   const handleCapture = (source) => {
     if (source === 'camera') {
@@ -31,31 +33,65 @@ export default function TrackingPage() {
     const reader = new FileReader();
     reader.onload = (ev) => {
       setImagePreview(ev.target.result);
-      simulateAnalysis();
+      runGeminiAnalysis(ev.target.result);
     };
     reader.readAsDataURL(file);
   };
 
-  const simulateAnalysis = () => {
+  const runGeminiAnalysis = async (base64Image) => {
     setStep('analyzing');
     setIsAnalyzing(true);
+    setAnalyzeError(null);
 
-    // Simulated Gemini API response - will be replaced with real API call
-    setTimeout(() => {
+    const childAllergies = activeChild?.allergies?.length > 0
+      ? `Das Kind hat bekannte Allergien/Unverträglichkeiten: ${activeChild.allergies.join(', ')}.`
+      : '';
+
+    const prompt = `Du bist ein Ernährungsexperte für Kleinkinder. Analysiere dieses Foto einer Mahlzeit.
+${childAllergies}
+
+Erkenne:
+1. Was ist auf dem Teller? Gib einen kurzen deutschen Titel.
+2. Liste alle erkennbaren Zutaten auf.
+3. Schätze die Nährwerte (für eine Kinderportion).
+4. Prüfe auf häufige Allergene (Milch, Ei, Gluten, Nüsse, Soja, Fisch, Schalentiere).
+
+Antworte NUR mit diesem JSON-Format, ohne Markdown:
+{
+  "title": "Bezeichnung der Mahlzeit",
+  "ingredients": ["Zutat1", "Zutat2"],
+  "calories": 0,
+  "protein": 0,
+  "carbs": 0,
+  "fat": 0,
+  "summary": "Kurze Bewertung der Mahlzeit (1 Satz)",
+  "allergens": ["nur wenn Allergene erkannt wurden"]
+}`;
+
+    try {
+      const response = await analyzeImageWithGemini(base64Image, prompt);
+      const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const parsed = JSON.parse(cleaned);
+
       setAnalysis({
-        title: 'Gemischter Gemüseteller',
-        ingredients: ['Karotten', 'Brokkoli', 'Kartoffeln', 'Hühnchen'],
-        calories: 280,
-        protein: 18,
-        carbs: 32,
-        fat: 8,
-        summary: 'Ausgewogene Mahlzeit mit Gemüse und Protein.',
-        allergens: [],
+        title: parsed.title || 'Mahlzeit',
+        ingredients: parsed.ingredients || [],
+        calories: parsed.calories || 0,
+        protein: parsed.protein || 0,
+        carbs: parsed.carbs || 0,
+        fat: parsed.fat || 0,
+        summary: parsed.summary || '',
+        allergens: parsed.allergens || [],
       });
-      setTitle('Gemischter Gemüseteller');
+      setTitle(parsed.title || 'Mahlzeit');
       setIsAnalyzing(false);
       setStep('review');
-    }, 2000);
+    } catch (err) {
+      console.error('Gemini analysis failed:', err);
+      setIsAnalyzing(false);
+      setAnalyzeError(err.message);
+      setStep('capture');
+    }
   };
 
   const handleSave = () => {
@@ -105,6 +141,13 @@ export default function TrackingPage() {
           <p className="text-center text-gray-500 mb-6">
             Fotografiere die Mahlzeit oder wähle ein Bild aus der Galerie.
           </p>
+
+          {analyzeError && (
+            <div className="flex items-center gap-2 px-4 py-3 bg-rose-50 border border-rose-200 rounded-xl">
+              <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+              <p className="text-sm text-rose-600">{analyzeError}</p>
+            </div>
+          )}
 
           <button
             onClick={() => handleCapture('camera')}
@@ -208,6 +251,23 @@ export default function TrackingPage() {
                 {analysis.ingredients.map((ing, i) => (
                   <span key={i} className="px-3 py-1 rounded-full text-xs font-medium bg-sage-50 text-sage-700">
                     {ing}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Allergen Warning */}
+          {analysis.allergens.length > 0 && (
+            <div className="bg-rose-50 border border-rose-200 rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertCircle className="w-4 h-4 text-rose-500" />
+                <h3 className="text-sm font-semibold text-rose-700">Allergene erkannt</h3>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {analysis.allergens.map((allergen, i) => (
+                  <span key={i} className="px-2.5 py-1 rounded-full text-xs font-medium bg-rose-100 text-rose-700">
+                    {allergen}
                   </span>
                 ))}
               </div>

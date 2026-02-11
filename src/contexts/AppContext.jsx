@@ -1,4 +1,9 @@
-import { createContext, useContext, useReducer, useEffect } from 'react';
+import { createContext, useContext, useReducer, useEffect, useRef } from 'react';
+import {
+  saveChild, removeChild as removeChildFromDb, saveMeal,
+  saveSymptom, removeSymptom as removeSymptomFromDb,
+  saveUserSettings, subscribeToUserData,
+} from '../lib/firestore';
 
 const AppContext = createContext(null);
 
@@ -10,6 +15,7 @@ const initialState = {
   activeChildId: null,
   meals: [],
   symptoms: [],
+  firestoreReady: false,
 };
 
 function appReducer(state, action) {
@@ -18,7 +24,7 @@ function appReducer(state, action) {
       return { ...state, loggedIn: true, currentUser: action.payload.username };
 
     case 'LOGOUT':
-      return { ...state, loggedIn: false, currentUser: null };
+      return { ...initialState };
 
     case 'SET_ONBOARDING_COMPLETE':
       return { ...state, onboardingComplete: true };
@@ -82,6 +88,9 @@ function appReducer(state, action) {
     case 'LOAD_STATE':
       return { ...state, ...action.payload };
 
+    case 'SYNC_FIRESTORE':
+      return { ...state, ...action.payload, firestoreReady: true };
+
     case 'RESET':
       return initialState;
 
@@ -90,8 +99,42 @@ function appReducer(state, action) {
   }
 }
 
+// Fire-and-forget Firestore sync — errors are logged, not thrown
+function syncToFirestore(username, action) {
+  if (!username) return;
+
+  try {
+    switch (action.type) {
+      case 'ADD_CHILD':
+      case 'UPDATE_CHILD':
+        saveChild(username, action.payload);
+        break;
+      case 'REMOVE_CHILD':
+        removeChildFromDb(username, action.payload);
+        break;
+      case 'ADD_MEAL':
+        saveMeal(username, action.payload);
+        break;
+      case 'ADD_SYMPTOM':
+        saveSymptom(username, action.payload);
+        break;
+      case 'REMOVE_SYMPTOM':
+        removeSymptomFromDb(username, action.payload);
+        break;
+      case 'SET_ONBOARDING_COMPLETE':
+        saveUserSettings(username, { onboardingComplete: true });
+        break;
+      case 'SET_ACTIVE_CHILD':
+        saveUserSettings(username, { activeChildId: action.payload });
+        break;
+    }
+  } catch (err) {
+    console.error('Firestore sync error:', err);
+  }
+}
+
 export function AppProvider({ children: reactChildren }) {
-  const [state, dispatch] = useReducer(appReducer, initialState, (init) => {
+  const [state, rawDispatch] = useReducer(appReducer, initialState, (init) => {
     const saved = localStorage.getItem('habeat-state');
     if (saved) {
       try {
@@ -103,9 +146,52 @@ export function AppProvider({ children: reactChildren }) {
     return init;
   });
 
+  const firestoreListening = useRef(false);
+
+  // Wrapped dispatch that also syncs to Firestore
+  const dispatch = (action) => {
+    rawDispatch(action);
+    syncToFirestore(state.currentUser, action);
+  };
+
+  // Save to localStorage
   useEffect(() => {
     localStorage.setItem('habeat-state', JSON.stringify(state));
   }, [state]);
+
+  // Subscribe to Firestore when logged in
+  useEffect(() => {
+    if (!state.loggedIn || !state.currentUser || firestoreListening.current) return;
+    firestoreListening.current = true;
+
+    const unsub = subscribeToUserData(state.currentUser, (type, data) => {
+      switch (type) {
+        case 'settings':
+          rawDispatch({
+            type: 'SYNC_FIRESTORE',
+            payload: {
+              onboardingComplete: data.onboardingComplete ?? false,
+              activeChildId: data.activeChildId ?? null,
+            },
+          });
+          break;
+        case 'children':
+          rawDispatch({ type: 'SYNC_FIRESTORE', payload: { children: data } });
+          break;
+        case 'meals':
+          rawDispatch({ type: 'SYNC_FIRESTORE', payload: { meals: data } });
+          break;
+        case 'symptoms':
+          rawDispatch({ type: 'SYNC_FIRESTORE', payload: { symptoms: data } });
+          break;
+      }
+    });
+
+    return () => {
+      unsub();
+      firestoreListening.current = false;
+    };
+  }, [state.loggedIn, state.currentUser]);
 
   const activeChild = state.children.find(c => c.id === state.activeChildId) || null;
 
