@@ -43,8 +43,8 @@ export default function TrackingPage() {
     setIsAnalyzing(true);
     setAnalyzeError(null);
 
-    const childAllergies = activeChild?.allergies?.length > 0
-      ? `Das Kind hat bekannte Allergien/Unverträglichkeiten: ${activeChild.allergies.join(', ')}.`
+    const childAllergies = activeChild?.knownAllergies?.length > 0
+      ? `Das Kind hat bekannte Allergien/Unverträglichkeiten: ${activeChild.knownAllergies.join(', ')}.`
       : '';
 
     const prompt = `Du bist ein Ernährungsexperte für Kleinkinder. Analysiere dieses Foto einer Mahlzeit.
