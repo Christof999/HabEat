@@ -1,0 +1,105 @@
+import { User, Baby, Bell, FileText, Trash2, ChevronRight, LogOut, Info, Shield } from 'lucide-react';
+import { useApp } from '../contexts/AppContext';
+
+export default function SettingsPage() {
+  const { state, dispatch } = useApp();
+
+  const handleReset = () => {
+    if (confirm('Möchtest du wirklich alle Daten löschen? Dies kann nicht rückgängig gemacht werden.')) {
+      dispatch({ type: 'RESET' });
+    }
+  };
+
+  const sections = [
+    {
+      title: 'Kinder',
+      items: [
+        ...state.children.map(child => ({
+          icon: Baby,
+          label: child.name,
+          sublabel: `${child.knownAllergies.length} Allergien`,
+          action: () => {},
+          avatarColor: child.avatarColor,
+        })),
+      ],
+    },
+    {
+      title: 'App',
+      items: [
+        { icon: Bell, label: 'Benachrichtigungen', sublabel: 'Erinnerungen konfigurieren', action: () => {} },
+        { icon: FileText, label: 'PDF-Export', sublabel: 'Bericht für den Kinderarzt', action: () => {} },
+        { icon: Shield, label: 'Datenschutz', sublabel: 'Deine Daten gehören dir', action: () => {} },
+      ],
+    },
+    {
+      title: 'Über',
+      items: [
+        { icon: Info, label: 'Über HabEat', sublabel: 'Version 1.0.0', action: () => {} },
+      ],
+    },
+  ];
+
+  return (
+    <div className="min-h-screen bg-warm-50">
+      {/* Header */}
+      <div className="px-6 pt-12 pb-4">
+        <h1 className="text-2xl font-bold text-gray-800">Einstellungen</h1>
+      </div>
+
+      <div className="px-6 space-y-6 pb-24">
+        {sections.map(section => (
+          <div key={section.title}>
+            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 px-1">
+              {section.title}
+            </h2>
+            <div className="bg-white rounded-2xl shadow-sm overflow-hidden divide-y divide-gray-50">
+              {section.items.map((item, i) => (
+                <button
+                  key={i}
+                  onClick={item.action}
+                  className="w-full px-4 py-3.5 flex items-center gap-3 cursor-pointer hover:bg-gray-50 transition text-left"
+                >
+                  {item.avatarColor ? (
+                    <div className={`w-9 h-9 rounded-full ${item.avatarColor} flex items-center justify-center`}>
+                      <span className="text-sm font-bold text-gray-700">{item.label.charAt(0)}</span>
+                    </div>
+                  ) : (
+                    <div className="w-9 h-9 rounded-xl bg-sage-50 flex items-center justify-center">
+                      <item.icon className="w-4 h-4 text-sage-600" />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800">{item.label}</p>
+                    {item.sublabel && <p className="text-xs text-gray-400">{item.sublabel}</p>}
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-gray-300" />
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+
+        {/* Danger Zone */}
+        <div>
+          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 px-1">
+            Gefahrenzone
+          </h2>
+          <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+            <button
+              onClick={handleReset}
+              className="w-full px-4 py-3.5 flex items-center gap-3 cursor-pointer hover:bg-rose-50 transition text-left"
+            >
+              <div className="w-9 h-9 rounded-xl bg-rose-50 flex items-center justify-center">
+                <Trash2 className="w-4 h-4 text-rose-500" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-rose-600">Alle Daten löschen</p>
+                <p className="text-xs text-gray-400">Onboarding zurücksetzen</p>
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

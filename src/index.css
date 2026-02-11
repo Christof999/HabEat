@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+@theme {
+  /* Modern Parent Comfort - Color Palette */
+  --color-sage-50: #f6f7f4;
+  --color-sage-100: #e8ebe3;
+  --color-sage-200: #d1d7c7;
+  --color-sage-300: #b3bda3;
+  --color-sage-400: #95a37f;
+  --color-sage-500: #7a8b65;
+  --color-sage-600: #5f6e4e;
+  --color-sage-700: #4a5640;
+  --color-sage-800: #3d4636;
+  --color-sage-900: #343b2f;
+
+  --color-warm-50: #fdf9f3;
+  --color-warm-100: #f9f0e1;
+  --color-warm-200: #f2dfc2;
+  --color-warm-300: #e8c99a;
+  --color-warm-400: #ddad6f;
+  --color-warm-500: #d4954e;
+  --color-warm-600: #c67e42;
+  --color-warm-700: #a56338;
+  --color-warm-800: #854f33;
+  --color-warm-900: #6c422c;
+
+  --color-sky-50: #f0f7fb;
+  --color-sky-100: #deedf6;
+  --color-sky-200: #c4dfee;
+  --color-sky-300: #9cc9e2;
+  --color-sky-400: #6dadd2;
+  --color-sky-500: #4d93c1;
+  --color-sky-600: #3b78a3;
+  --color-sky-700: #316185;
+  --color-sky-800: #2d526e;
+  --color-sky-900: #29455c;
+
+  --color-rose-50: #fdf5f5;
+  --color-rose-100: #fce8e8;
+  --color-rose-200: #f9d4d4;
+  --color-rose-300: #f3b0b0;
+  --color-rose-400: #ea8282;
+  --color-rose-500: #dd5b5b;
+  --color-rose-600: #c93d3d;
+  --color-rose-700: #a83030;
+  --color-rose-800: #8c2b2b;
+  --color-rose-900: #752929;
+
+  /* Fonts */
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+
+  /* Border radius */
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
+  --radius-3xl: 1.5rem;
+}
+
+/* Base styles */
+body {
+  @apply bg-warm-50 text-gray-800 antialiased;
+  font-family: var(--font-sans);
+  margin: 0;
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-sage-300 rounded-full;
+}
+
+/* Safe area for mobile */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
