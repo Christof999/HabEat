@@ -3,6 +3,8 @@ import { createContext, useContext, useReducer, useEffect } from 'react';
 const AppContext = createContext(null);
 
 const initialState = {
+  loggedIn: false,
+  currentUser: null,
   onboardingComplete: false,
   children: [],
   activeChildId: null,
@@ -12,6 +14,12 @@ const initialState = {
 
 function appReducer(state, action) {
   switch (action.type) {
+    case 'SET_LOGGED_IN':
+      return { ...state, loggedIn: true, currentUser: action.payload.username };
+
+    case 'LOGOUT':
+      return { ...state, loggedIn: false, currentUser: null };
+
     case 'SET_ONBOARDING_COMPLETE':
       return { ...state, onboardingComplete: true };
 

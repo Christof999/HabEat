@@ -4,6 +4,10 @@ import { useApp } from '../contexts/AppContext';
 export default function SettingsPage() {
   const { state, dispatch } = useApp();
 
+  const handleLogout = () => {
+    dispatch({ type: 'LOGOUT' });
+  };
+
   const handleReset = () => {
     if (confirm('Möchtest du wirklich alle Daten löschen? Dies kann nicht rückgängig gemacht werden.')) {
       dispatch({ type: 'RESET' });
@@ -42,8 +46,20 @@ export default function SettingsPage() {
   return (
     <div className="min-h-screen bg-warm-50">
       {/* Header */}
-      <div className="px-6 pt-12 pb-4">
-        <h1 className="text-2xl font-bold text-gray-800">Einstellungen</h1>
+      <div className="px-6 pt-12 pb-4 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">Einstellungen</h1>
+          {state.currentUser && (
+            <p className="text-sm text-gray-400">Angemeldet als {state.currentUser}</p>
+          )}
+        </div>
+        <button
+          onClick={handleLogout}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-gray-500 hover:text-rose-500 hover:bg-rose-50 transition cursor-pointer"
+        >
+          <LogOut className="w-4 h-4" />
+          Abmelden
+        </button>
       </div>
 
       <div className="px-6 space-y-6 pb-24">

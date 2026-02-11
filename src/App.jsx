@@ -1,6 +1,7 @@
 import { Routes, Route } from 'react-router-dom';
 import { useApp } from './contexts/AppContext';
 import AppShell from './components/layout/AppShell';
+import LoginPage from './pages/LoginPage';
 import OnboardingPage from './pages/OnboardingPage';
 import HomePage from './pages/HomePage';
 import TrackingPage from './pages/TrackingPage';
@@ -11,6 +12,10 @@ import SettingsPage from './pages/SettingsPage';
 
 function App() {
   const { state } = useApp();
+
+  if (!state.loggedIn) {
+    return <LoginPage />;
+  }
 
   if (!state.onboardingComplete || state.children.length === 0) {
     return <OnboardingPage />;
