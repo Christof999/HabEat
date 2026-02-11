@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { ArrowRight, ArrowLeft, Plus, X, User, Calendar, Ruler, Weight, AlertTriangle } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { ArrowRight, ArrowLeft, Plus, X, User, Calendar, Ruler, Weight, AlertTriangle, Camera } from 'lucide-react';
 
 const commonAllergens = [
   'Milch', 'Ei', 'Erdnuss', 'Baumnüsse', 'Weizen', 'Soja',
@@ -19,9 +19,19 @@ export default function AddChildForm({ onAdd, onBack, childIndex = 0 }) {
     weight: '',
     knownAllergies: [],
     avatarColor: avatarColors[childIndex % avatarColors.length],
+    photoUrl: null,
   });
   const [customAllergen, setCustomAllergen] = useState('');
   const [errors, setErrors] = useState({});
+  const photoInputRef = useRef(null);
+
+  const handlePhotoChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => updateField('photoUrl', ev.target.result);
+    reader.readAsDataURL(file);
+  };
 
   const updateField = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
@@ -90,32 +100,63 @@ export default function AddChildForm({ onAdd, onBack, childIndex = 0 }) {
       </div>
 
       <form onSubmit={handleSubmit} className="px-6 pb-32 space-y-6">
-        {/* Avatar Preview */}
-        <div className="flex justify-center">
-          <div className={`w-20 h-20 rounded-full ${form.avatarColor} flex items-center justify-center shadow-sm`}>
-            {form.name ? (
-              <span className="text-2xl font-bold text-gray-700">
-                {form.name.charAt(0).toUpperCase()}
-              </span>
-            ) : (
-              <User className="w-8 h-8 text-gray-400" />
-            )}
-          </div>
+        {/* Avatar Preview with Photo Upload */}
+        <div className="flex flex-col items-center gap-3">
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handlePhotoChange}
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={() => photoInputRef.current.click()}
+            className="relative group cursor-pointer"
+          >
+            <div className={`w-20 h-20 rounded-full ${form.avatarColor} flex items-center justify-center shadow-sm overflow-hidden`}>
+              {form.photoUrl ? (
+                <img src={form.photoUrl} alt="Foto" className="w-full h-full object-cover" />
+              ) : form.name ? (
+                <span className="text-2xl font-bold text-gray-700">
+                  {form.name.charAt(0).toUpperCase()}
+                </span>
+              ) : (
+                <User className="w-8 h-8 text-gray-400" />
+              )}
+            </div>
+            <div className="absolute inset-0 rounded-full bg-black/0 group-hover:bg-black/20 transition flex items-center justify-center">
+              <div className="absolute -bottom-0.5 -right-0.5 w-7 h-7 bg-sage-500 rounded-full flex items-center justify-center shadow-sm border-2 border-warm-50">
+                <Camera className="w-3.5 h-3.5 text-white" />
+              </div>
+            </div>
+          </button>
+          {form.photoUrl && (
+            <button
+              type="button"
+              onClick={() => updateField('photoUrl', null)}
+              className="text-xs text-gray-400 hover:text-rose-500 transition cursor-pointer"
+            >
+              Foto entfernen
+            </button>
+          )}
         </div>
 
         {/* Avatar Color Picker */}
-        <div className="flex justify-center gap-2">
-          {avatarColors.map(color => (
-            <button
-              key={color}
-              type="button"
-              onClick={() => updateField('avatarColor', color)}
-              className={`w-8 h-8 rounded-full ${color} cursor-pointer transition-transform ${
-                form.avatarColor === color ? 'ring-2 ring-sage-500 ring-offset-2 scale-110' : ''
-              }`}
-            />
-          ))}
-        </div>
+        {!form.photoUrl && (
+          <div className="flex justify-center gap-2">
+            {avatarColors.map(color => (
+              <button
+                key={color}
+                type="button"
+                onClick={() => updateField('avatarColor', color)}
+                className={`w-8 h-8 rounded-full ${color} cursor-pointer transition-transform ${
+                  form.avatarColor === color ? 'ring-2 ring-sage-500 ring-offset-2 scale-110' : ''
+                }`}
+              />
+            ))}
+          </div>
+        )}
 
         {/* Name */}
         <div>

@@ -25,7 +25,10 @@ function symptomsCol(username) {
 
 // --- Children ---
 export async function saveChild(username, child) {
-  await setDoc(doc(childrenCol(username), child.id), child);
+  await setDoc(doc(childrenCol(username), child.id), {
+    ...child,
+    photoUrl: null, // Don't store base64 images in Firestore (too large)
+  });
 }
 
 export async function removeChild(username, childId) {

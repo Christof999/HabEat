@@ -23,10 +23,14 @@ export default function OnboardingSummary({ children, onAddAnother, onComplete, 
             key={child.id}
             className="bg-white rounded-2xl p-4 shadow-sm flex items-center gap-4"
           >
-            <div className={`w-14 h-14 rounded-full ${child.avatarColor} flex items-center justify-center shrink-0`}>
-              <span className="text-xl font-bold text-gray-700">
-                {child.name.charAt(0).toUpperCase()}
-              </span>
+            <div className={`w-14 h-14 rounded-full ${child.avatarColor} flex items-center justify-center shrink-0 overflow-hidden`}>
+              {child.photoUrl ? (
+                <img src={child.photoUrl} alt={child.name} className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-xl font-bold text-gray-700">
+                  {child.name.charAt(0).toUpperCase()}
+                </span>
+              )}
             </div>
             <div className="flex-1 min-w-0">
               <h3 className="font-semibold text-gray-800">{child.name}</h3>
