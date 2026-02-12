@@ -83,6 +83,27 @@ export default function MealDetailModal({ meal, onClose }) {
             </div>
           )}
 
+          {/* Portion Eaten */}
+          {meal.portionEaten && (
+            <div>
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">Gegessene Menge</h3>
+              <div className="flex items-center gap-3">
+                <span className="text-lg">
+                  {meal.portionEaten === 'full' ? '●' : meal.portionEaten === 'half' ? '◐' : '◔'}
+                </span>
+                <span className="text-sm text-gray-600 font-medium">
+                  {meal.portionEaten === 'full' ? 'Ganz aufgegessen' : meal.portionEaten === 'half' ? 'Etwa die Hälfte' : 'Etwas probiert'}
+                </span>
+              </div>
+              {meal.afterImageUrl && (
+                <div className="mt-3 rounded-xl overflow-hidden">
+                  <img src={meal.afterImageUrl} alt="Teller danach" className="w-full h-40 object-cover" />
+                  <p className="text-xs text-gray-400 mt-1">Foto nach dem Essen</p>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Notes */}
           {meal.notes && (
             <div>

@@ -40,6 +40,7 @@ export async function saveMeal(username, meal) {
   await setDoc(doc(mealsCol(username), meal.id), {
     ...meal,
     imageUrl: null, // Don't store base64 images in Firestore (too large)
+    afterImageUrl: null, // Same for after-eating photos
   });
 }
 

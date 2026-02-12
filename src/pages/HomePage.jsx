@@ -52,7 +52,7 @@ export default function HomePage() {
       <div className="px-6 space-y-3">
         {todayMeals.length > 0 ? (
           todayMeals.map(meal => (
-            <MealCard key={meal.id} meal={meal} onClick={() => setSelectedMeal(meal)} />
+            <MealCard key={meal.id} meal={meal} onClick={() => setSelectedMeal(meal)} showPortionPicker />
           ))
         ) : (
           <EmptyMeals />

@@ -131,6 +131,7 @@ function syncToFirestore(username, action) {
         removeChildFromDb(username, action.payload);
         break;
       case 'ADD_MEAL':
+      case 'UPDATE_MEAL':
         saveMeal(username, action.payload);
         break;
       case 'ADD_SYMPTOM':
@@ -251,7 +252,11 @@ export function AppProvider({ children: reactChildren }) {
           // Preserve local imageUrl (not stored in Firestore, base64 too large)
           const mergedMeals = data.map(fsMeal => {
             const localMeal = current.meals.find(m => m.id === fsMeal.id);
-            return { ...fsMeal, imageUrl: localMeal?.imageUrl || null };
+            return {
+              ...fsMeal,
+              imageUrl: localMeal?.imageUrl || null,
+              afterImageUrl: localMeal?.afterImageUrl || null,
+            };
           });
           rawDispatch({ type: 'SYNC_FIRESTORE', payload: { meals: mergedMeals } });
           break;
