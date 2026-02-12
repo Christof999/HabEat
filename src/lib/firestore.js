@@ -1,5 +1,5 @@
 import {
-  collection, doc, setDoc, deleteDoc, onSnapshot, query, orderBy,
+  collection, doc, setDoc, deleteDoc, onSnapshot, query, orderBy, getDocs,
 } from 'firebase/firestore';
 import { db } from './firebase';
 
@@ -61,6 +61,16 @@ export async function removeSymptom(username, symptomId) {
 // --- Settings (activeChildId, onboardingComplete) ---
 export async function saveUserSettings(username, settings) {
   await setDoc(userRef(username), settings, { merge: true });
+}
+
+// --- Delete all user data ---
+export async function deleteAllUserData(username) {
+  const collections = [childrenCol(username), mealsCol(username), symptomsCol(username)];
+  for (const col of collections) {
+    const snap = await getDocs(col);
+    await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
+  }
+  await deleteDoc(userRef(username));
 }
 
 // --- Real-time listeners ---

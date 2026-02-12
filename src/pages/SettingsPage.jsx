@@ -4,6 +4,7 @@ import {
   Info, Shield, X,
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
+import { deleteAllUserData } from '../lib/firestore';
 import EditChildModal from '../components/settings/EditChildModal';
 
 export default function SettingsPage() {
@@ -15,8 +16,15 @@ export default function SettingsPage() {
     dispatch({ type: 'LOGOUT' });
   };
 
-  const handleReset = () => {
+  const handleReset = async () => {
     if (confirm('Möchtest du wirklich alle Daten löschen? Dies kann nicht rückgängig gemacht werden.')) {
+      if (state.currentUser) {
+        try {
+          await deleteAllUserData(state.currentUser);
+        } catch (err) {
+          console.error('Firestore delete error:', err);
+        }
+      }
       localStorage.removeItem('habeat-state');
       dispatch({ type: 'RESET' });
     }
