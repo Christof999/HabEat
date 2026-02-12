@@ -44,6 +44,11 @@ export async function saveMeal(username, meal) {
   });
 }
 
+export async function updateMeal(username, partialMeal) {
+  const { imageUrl, afterImageUrl, ...fields } = partialMeal;
+  await setDoc(doc(mealsCol(username), partialMeal.id), fields, { merge: true });
+}
+
 // --- Symptoms ---
 export async function saveSymptom(username, symptom) {
   await setDoc(doc(symptomsCol(username), symptom.id), symptom);

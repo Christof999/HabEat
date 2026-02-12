@@ -1,6 +1,6 @@
 import { createContext, useContext, useReducer, useEffect, useRef, useCallback } from 'react';
 import {
-  saveChild, removeChild as removeChildFromDb, saveMeal,
+  saveChild, removeChild as removeChildFromDb, saveMeal, updateMeal,
   saveSymptom, removeSymptom as removeSymptomFromDb,
   saveUserSettings, subscribeToUserData,
 } from '../lib/firestore';
@@ -131,8 +131,10 @@ function syncToFirestore(username, action) {
         removeChildFromDb(username, action.payload);
         break;
       case 'ADD_MEAL':
-      case 'UPDATE_MEAL':
         saveMeal(username, action.payload);
+        break;
+      case 'UPDATE_MEAL':
+        updateMeal(username, action.payload);
         break;
       case 'ADD_SYMPTOM':
         saveSymptom(username, action.payload);
