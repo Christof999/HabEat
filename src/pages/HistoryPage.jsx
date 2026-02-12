@@ -38,8 +38,14 @@ export default function HistoryPage() {
     ? groupedByDate.find(([d]) => d === selectedDate)?.[1] || []
     : [];
 
+  const portionFactor = (meal) => {
+    if (meal.portionEaten === 'half') return 0.5;
+    if (meal.portionEaten === 'some') return 0.25;
+    return 1;
+  };
+
   const daySummary = (meals) => {
-    const totalCal = meals.reduce((sum, m) => sum + (m.calories || 0), 0);
+    const totalCal = meals.reduce((sum, m) => sum + Math.round((m.calories || 0) * portionFactor(m)), 0);
     return { totalCal, mealCount: meals.length };
   };
 

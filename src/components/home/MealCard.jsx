@@ -1,11 +1,18 @@
 import { Clock, ChevronRight } from 'lucide-react';
 import PortionPicker from './PortionPicker';
 
+function portionFactor(meal) {
+  if (meal.portionEaten === 'half') return 0.5;
+  if (meal.portionEaten === 'some') return 0.25;
+  return 1;
+}
+
 export default function MealCard({ meal, onClick, showPortionPicker }) {
   const time = new Date(meal.timestamp).toLocaleTimeString('de-DE', {
     hour: '2-digit',
     minute: '2-digit',
   });
+  const adjustedCal = meal.calories ? Math.round(meal.calories * portionFactor(meal)) : null;
 
   return (
     <div className="bg-white rounded-2xl shadow-sm hover:shadow-md transition">
@@ -33,8 +40,8 @@ export default function MealCard({ meal, onClick, showPortionPicker }) {
           <div className="flex items-center gap-1 mt-1.5 text-gray-400">
             <Clock className="w-3 h-3" />
             <span className="text-xs">{time}</span>
-            {meal.calories && (
-              <span className="text-xs ml-2">{meal.calories} kcal</span>
+            {adjustedCal != null && (
+              <span className="text-xs ml-2">{adjustedCal} kcal</span>
             )}
           </div>
         </div>

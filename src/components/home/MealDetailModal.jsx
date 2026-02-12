@@ -1,5 +1,11 @@
 import { X, Clock, Flame, Droplets, Wheat, Beef } from 'lucide-react';
 
+function portionFactor(meal) {
+  if (meal.portionEaten === 'half') return 0.5;
+  if (meal.portionEaten === 'some') return 0.25;
+  return 1;
+}
+
 export default function MealDetailModal({ meal, onClose }) {
   if (!meal) return null;
 
@@ -13,11 +19,14 @@ export default function MealDetailModal({ meal, onClose }) {
     month: 'long',
   });
 
+  const factor = portionFactor(meal);
+  const adjust = (v) => v != null ? Math.round(v * factor) : v;
+
   const nutrients = [
-    { icon: Flame, label: 'Kalorien', value: meal.calories, unit: 'kcal', color: 'text-warm-600' },
-    { icon: Beef, label: 'Protein', value: meal.protein, unit: 'g', color: 'text-rose-500' },
-    { icon: Wheat, label: 'Kohlenhydrate', value: meal.carbs, unit: 'g', color: 'text-warm-500' },
-    { icon: Droplets, label: 'Fett', value: meal.fat, unit: 'g', color: 'text-sky-500' },
+    { icon: Flame, label: 'Kalorien', value: adjust(meal.calories), unit: 'kcal', color: 'text-warm-600' },
+    { icon: Beef, label: 'Protein', value: adjust(meal.protein), unit: 'g', color: 'text-rose-500' },
+    { icon: Wheat, label: 'Kohlenhydrate', value: adjust(meal.carbs), unit: 'g', color: 'text-warm-500' },
+    { icon: Droplets, label: 'Fett', value: adjust(meal.fat), unit: 'g', color: 'text-sky-500' },
   ];
 
   return (
