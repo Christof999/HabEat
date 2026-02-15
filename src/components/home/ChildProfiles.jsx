@@ -50,18 +50,20 @@ export default function ChildProfiles({ onAddChild }) {
           );
         })}
 
-        {/* Add Child Button */}
-        <button
-          onClick={onAddChild}
-          className="flex flex-col items-center gap-1.5 shrink-0 cursor-pointer"
-        >
-          <div className="rounded-full p-[3px] bg-transparent">
-            <div className="w-14 h-14 rounded-full border-2 border-dashed border-sage-300 flex items-center justify-center hover:border-sage-500 hover:bg-sage-50 transition">
-              <Plus className="w-5 h-5 text-sage-400" />
+        {/* Add Child Button — only shown when onAddChild is provided */}
+        {onAddChild && (
+          <button
+            onClick={onAddChild}
+            className="flex flex-col items-center gap-1.5 shrink-0 cursor-pointer"
+          >
+            <div className="rounded-full p-[3px] bg-transparent">
+              <div className="w-14 h-14 rounded-full border-2 border-dashed border-sage-300 flex items-center justify-center hover:border-sage-500 hover:bg-sage-50 transition">
+                <Plus className="w-5 h-5 text-sage-400" />
+              </div>
             </div>
-          </div>
-          <span className="text-xs font-medium text-gray-400">Hinzufügen</span>
-        </button>
+            <span className="text-xs font-medium text-gray-400">Hinzufügen</span>
+          </button>
+        )}
       </div>
     </div>
   );

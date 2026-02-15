@@ -25,8 +25,8 @@ export default function GrandparentHomePage() {
         </h1>
       </div>
 
-      {/* Child Profiles */}
-      {state.children.length > 1 && <ChildProfiles />}
+      {/* Child Profiles — always show so grandparents can pick the right child */}
+      <ChildProfiles />
 
       {/* Big Action Buttons */}
       <div className="px-6 pt-6 space-y-4">

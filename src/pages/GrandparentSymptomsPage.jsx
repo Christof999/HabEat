@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Plus, Check } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
+import ChildProfiles from '../components/home/ChildProfiles';
 import SymptomLogger from '../components/detective/SymptomLogger';
 
 export default function GrandparentSymptomsPage() {
@@ -19,12 +20,15 @@ export default function GrandparentSymptomsPage() {
 
   return (
     <div className="min-h-screen bg-warm-50">
-      <div className="px-6 pt-12 pb-4">
+      <div className="px-6 pt-12 pb-2">
         <h1 className="text-2xl font-bold text-gray-800">Symptome</h1>
         <p className="text-gray-400 mt-1">
           {activeChild ? `Beobachtungen für ${activeChild.name}` : 'Beobachtungen erfassen'}
         </p>
       </div>
+
+      {/* Child selector */}
+      <ChildProfiles />
 
       <div className="px-6 space-y-4">
         {/* Add Symptom Button */}
