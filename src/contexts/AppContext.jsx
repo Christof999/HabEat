@@ -10,6 +10,8 @@ const AppContext = createContext(null);
 const initialState = {
   loggedIn: false,
   currentUser: null,
+  grandparentMode: false,
+  grandparentFor: null,
   onboardingComplete: false,
   children: [],
   activeChildId: null,
@@ -23,6 +25,15 @@ function appReducer(state, action) {
   switch (action.type) {
     case 'SET_LOGGED_IN':
       return { ...initialState, loggedIn: true, currentUser: action.payload.username };
+
+    case 'SET_GRANDPARENT_MODE':
+      return {
+        ...initialState,
+        loggedIn: true,
+        grandparentMode: true,
+        grandparentFor: action.payload.username,
+        currentUser: action.payload.username,
+      };
 
     case 'LOGOUT':
       return { ...initialState };
@@ -209,8 +220,9 @@ export function AppProvider({ children: reactChildren }) {
     syncToFirestore(stateRef.current.currentUser, action);
   }, []);
 
-  // Save to per-user localStorage
+  // Save to per-user localStorage (skip for grandparent mode — they don't own the data)
   useEffect(() => {
+    if (state.grandparentMode) return;
     const key = storageKey(state.currentUser);
     localStorage.setItem(key, JSON.stringify(state));
     if (state.currentUser) {
@@ -218,12 +230,12 @@ export function AppProvider({ children: reactChildren }) {
     }
   }, [state]);
 
-  // Sync emergency contacts to Firestore
+  // Sync emergency contacts to Firestore (not in grandparent mode)
   useEffect(() => {
-    if (state.currentUser && state.firestoreReady) {
+    if (state.currentUser && state.firestoreReady && !state.grandparentMode) {
       saveUserSettings(state.currentUser, { emergencyContacts: state.emergencyContacts });
     }
-  }, [state.emergencyContacts, state.currentUser, state.firestoreReady]);
+  }, [state.emergencyContacts, state.currentUser, state.firestoreReady, state.grandparentMode]);
 
   // Subscribe to Firestore when logged in
   useEffect(() => {

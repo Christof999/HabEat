@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import {
   Baby, FileText, Trash2, ChevronRight, LogOut,
-  Info, Shield, X,
+  Info, Shield, X, Users,
 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { useApp } from '../contexts/AppContext';
 import { deleteAllUserData } from '../lib/firestore';
 import EditChildModal from '../components/settings/EditChildModal';
@@ -105,6 +106,17 @@ export default function SettingsPage() {
         action: () => setEditingChild(child),
         avatarColor: child.avatarColor,
       })),
+    },
+    {
+      title: 'Familie',
+      items: [
+        {
+          icon: Users,
+          label: 'Großeltern einladen',
+          sublabel: 'QR-Code zum Teilen',
+          action: () => setActiveModal('grandparent'),
+        },
+      ],
     },
     {
       title: 'App',
@@ -245,6 +257,43 @@ export default function SettingsPage() {
             </div>
             <div className="bg-sage-50 rounded-xl p-3 text-center">
               <p className="text-xs text-sage-700">Powered by Gemini AI & Firebase</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Grandparent QR Modal */}
+      {activeModal === 'grandparent' && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-6">
+          <div className="bg-white rounded-3xl w-full max-w-sm p-6 space-y-5">
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold text-lg text-gray-800">Großeltern einladen</h2>
+              <button onClick={() => setActiveModal(null)} className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center cursor-pointer">
+                <X className="w-4 h-4 text-gray-500" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-500">
+              Großeltern scannen diesen QR-Code und können dann Mahlzeiten erfassen,
+              Symptome melden und die Allergie-Karte sehen.
+            </p>
+            <div className="flex justify-center p-4 bg-white rounded-2xl border-2 border-dashed border-sage-200">
+              <QRCodeSVG
+                value={`${window.location.origin}/g/${btoa(state.currentUser)}`}
+                size={200}
+                level="M"
+                includeMargin
+                bgColor="#ffffff"
+                fgColor="#2d5a3d"
+              />
+            </div>
+            <div className="bg-sage-50 rounded-xl p-3 space-y-2">
+              <p className="text-xs text-sage-700 font-semibold">Was können Großeltern?</p>
+              <ul className="text-xs text-sage-600 space-y-1">
+                <li>&#10003; Essen fotografieren & erfassen</li>
+                <li>&#10003; Symptome melden</li>
+                <li>&#10003; Allergie-Karte & Notfallnummern sehen</li>
+                <li className="text-gray-400">&#10007; Kein Zugriff auf Verlauf oder Detektiv</li>
+              </ul>
             </div>
           </div>
         </div>
