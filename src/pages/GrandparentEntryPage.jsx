@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 
 export default function GrandparentEntryPage() {
   const { token } = useParams();
   const { dispatch } = useApp();
-  const navigate = useNavigate();
   const [error, setError] = useState(false);
 
   useEffect(() => {
@@ -18,11 +17,12 @@ export default function GrandparentEntryPage() {
         type: 'SET_GRANDPARENT_MODE',
         payload: { username },
       });
-      navigate('/', { replace: true });
+      // After dispatch, App.jsx re-renders with grandparentMode=true
+      // and takes over routing — no navigate needed
     } catch {
       setError(true);
     }
-  }, [token, dispatch, navigate]);
+  }, [token, dispatch]);
 
   if (error) {
     return (
