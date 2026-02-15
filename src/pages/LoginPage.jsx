@@ -5,6 +5,7 @@ import { useApp } from '../contexts/AppContext';
 const VALID_USERS = [
   { username: 'Daniela', password: 'Admin' },
   { username: 'Peter', password: 'Admin' },
+  { username: 'Teste', password: 'admin' },
 ];
 
 export default function LoginPage() {
@@ -65,7 +66,7 @@ export default function LoginPage() {
               type="text"
               value={username}
               onChange={e => { setUsername(e.target.value); setError(''); }}
-              placeholder="Daniela oder Peter"
+              placeholder="Benutzername eingeben"
               autoComplete="username"
               className="w-full px-4 py-3 rounded-xl bg-warm-50 border border-sage-200 focus:outline-none focus:ring-2 focus:ring-sage-300 transition text-gray-800 placeholder:text-gray-400"
             />
