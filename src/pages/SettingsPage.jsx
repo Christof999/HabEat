@@ -25,7 +25,8 @@ export default function SettingsPage() {
           console.error('Firestore delete error:', err);
         }
       }
-      localStorage.removeItem('habeat-state');
+      const key = state.currentUser ? `habeat-state-${state.currentUser.toLowerCase()}` : 'habeat-state';
+      localStorage.removeItem(key);
       dispatch({ type: 'RESET' });
     }
   };

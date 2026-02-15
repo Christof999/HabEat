@@ -22,7 +22,7 @@ const initialState = {
 function appReducer(state, action) {
   switch (action.type) {
     case 'SET_LOGGED_IN':
-      return { ...state, loggedIn: true, currentUser: action.payload.username };
+      return { ...initialState, loggedIn: true, currentUser: action.payload.username };
 
     case 'LOGOUT':
       return { ...initialState };
@@ -178,9 +178,16 @@ function seedFirestoreFromLocal(username, localState) {
   localState.symptoms.forEach(symptom => saveSymptom(username, symptom));
 }
 
+function storageKey(username) {
+  return username ? `habeat-state-${username.toLowerCase()}` : 'habeat-state';
+}
+
 export function AppProvider({ children: reactChildren }) {
   const [state, rawDispatch] = useReducer(appReducer, initialState, (init) => {
-    const saved = localStorage.getItem('habeat-state');
+    // Try to restore the last active session
+    const lastUser = localStorage.getItem('habeat-last-user');
+    const key = lastUser ? storageKey(lastUser) : 'habeat-state';
+    const saved = localStorage.getItem(key);
     if (saved) {
       try {
         return { ...init, ...JSON.parse(saved) };
@@ -202,9 +209,13 @@ export function AppProvider({ children: reactChildren }) {
     syncToFirestore(stateRef.current.currentUser, action);
   }, []);
 
-  // Save to localStorage
+  // Save to per-user localStorage
   useEffect(() => {
-    localStorage.setItem('habeat-state', JSON.stringify(state));
+    const key = storageKey(state.currentUser);
+    localStorage.setItem(key, JSON.stringify(state));
+    if (state.currentUser) {
+      localStorage.setItem('habeat-last-user', state.currentUser.toLowerCase());
+    }
   }, [state]);
 
   // Sync emergency contacts to Firestore
