@@ -278,7 +278,7 @@ export default function SettingsPage() {
             </p>
             <div className="flex justify-center p-4 bg-white rounded-2xl border-2 border-dashed border-sage-200">
               <QRCodeSVG
-                value={`${window.location.origin}/g/${btoa(state.currentUser)}`}
+                value={`${window.location.origin}${window.location.pathname}#/g/${btoa(state.currentUser)}`}
                 size={200}
                 level="M"
                 includeMargin
