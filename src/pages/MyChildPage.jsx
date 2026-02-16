@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Ruler, Weight, TrendingUp, TrendingDown,
@@ -32,7 +32,6 @@ function getWeightAlert(entries, childId) {
   const latest = childEntries[childEntries.length - 1];
   const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
 
-  // Find the most recent entry before the 2-week window
   const earlier = [...childEntries]
     .reverse()
     .find(e => new Date(e.timestamp) < twoWeeksAgo);
@@ -45,14 +44,14 @@ function getWeightAlert(entries, childId) {
     return {
       type: 'danger',
       text: `${Math.abs(percentChange).toFixed(1)}% Gewichtsverlust seit ${new Date(earlier.timestamp).toLocaleDateString('de-DE')}`,
-      detail: `${earlier.weight} kg → ${latest.weight} kg`,
+      detail: `${earlier.weight} kg \u2192 ${latest.weight} kg`,
     };
   }
   if (percentChange <= -3) {
     return {
       type: 'warning',
       text: `${Math.abs(percentChange).toFixed(1)}% Gewichtsverlust seit ${new Date(earlier.timestamp).toLocaleDateString('de-DE')}`,
-      detail: `${earlier.weight} kg → ${latest.weight} kg`,
+      detail: `${earlier.weight} kg \u2192 ${latest.weight} kg`,
     };
   }
   return null;
@@ -60,20 +59,18 @@ function getWeightAlert(entries, childId) {
 
 // Simple SVG growth chart
 function GrowthChart({ entries, dataKey, label, unit, color }) {
-  if (entries.length < 2) {
-    return (
-      <div className="bg-gray-50 rounded-xl p-6 text-center">
-        <Activity className="w-6 h-6 text-gray-300 mx-auto mb-2" />
-        <p className="text-sm text-gray-400">Mindestens 2 Messungen noetig fuer {label}-Kurve</p>
-      </div>
-    );
-  }
-
   const data = entries
     .filter(e => e[dataKey])
     .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
-  if (data.length < 2) return null;
+  if (data.length < 2) {
+    return (
+      <div className="bg-gray-50 rounded-xl p-6 text-center">
+        <Activity className="w-6 h-6 text-gray-300 mx-auto mb-2" />
+        <p className="text-sm text-gray-400">Mindestens 2 Messungen fuer {label}-Kurve noetig</p>
+      </div>
+    );
+  }
 
   const values = data.map(d => d[dataKey]);
   const minVal = Math.min(...values);
@@ -98,7 +95,6 @@ function GrowthChart({ entries, dataKey, label, unit, color }) {
 
   const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
 
-  // Y-axis labels
   const ySteps = 4;
   const yLabels = Array.from({ length: ySteps + 1 }, (_, i) => {
     const val = (minVal - padding) + ((range + 2 * padding) / ySteps) * i;
@@ -113,7 +109,6 @@ function GrowthChart({ entries, dataKey, label, unit, color }) {
       </div>
       <div className="bg-white rounded-xl p-3 overflow-x-auto">
         <svg viewBox={`0 0 ${chartW} ${chartH}`} className="w-full" style={{ minWidth: 250 }}>
-          {/* Grid lines */}
           {yLabels.map((val, i) => {
             const y = padT + drawH - (i / ySteps) * drawH;
             return (
@@ -123,36 +118,25 @@ function GrowthChart({ entries, dataKey, label, unit, color }) {
               </g>
             );
           })}
-
-          {/* Area fill */}
           <path
             d={`${pathD} L ${points[points.length - 1].x} ${padT + drawH} L ${points[0].x} ${padT + drawH} Z`}
             fill={color}
             opacity="0.1"
           />
-
-          {/* Line */}
           <path d={pathD} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-
-          {/* Dots */}
           {points.map((p, i) => (
             <g key={i}>
               <circle cx={p.x} cy={p.y} r="3.5" fill="white" stroke={color} strokeWidth="1.5" />
-              {/* Value label on hover area */}
               <text x={p.x} y={p.y - 6} textAnchor="middle" fontSize="6" fill={color} fontWeight="600">
                 {p.value}
               </text>
             </g>
           ))}
-
-          {/* X-axis date labels */}
           {points.filter((_, i) => i === 0 || i === points.length - 1 || points.length <= 5).map((p, i) => (
             <text key={i} x={p.x} y={chartH - 5} textAnchor="middle" fontSize="5.5" fill="#9ca3af">
               {new Date(p.date).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}
             </text>
           ))}
-
-          {/* Unit label */}
           <text x={2} y={padT + 4} fontSize="6" fill="#9ca3af">{unit}</text>
         </svg>
       </div>
@@ -192,7 +176,8 @@ function AddGrowthModal({ child, onSave, onClose }) {
             type="date"
             value={date}
             onChange={e => setDate(e.target.value)}
-            className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-sage-300 transition text-gray-800"
+            className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-sage-300 transition text-sm text-gray-800 appearance-none"
+            style={{ minHeight: '48px' }}
           />
         </div>
 
@@ -206,7 +191,7 @@ function AddGrowthModal({ child, onSave, onClose }) {
               value={height}
               onChange={e => setHeight(e.target.value)}
               placeholder="z.B. 85"
-              className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-sage-300 transition text-gray-800 placeholder:text-gray-400"
+              className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-sage-300 transition text-sm text-gray-800 placeholder:text-gray-400"
             />
           </div>
           <div>
@@ -219,7 +204,7 @@ function AddGrowthModal({ child, onSave, onClose }) {
               value={weight}
               onChange={e => setWeight(e.target.value)}
               placeholder="z.B. 12.5"
-              className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-sage-300 transition text-gray-800 placeholder:text-gray-400"
+              className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-sage-300 transition text-sm text-gray-800 placeholder:text-gray-400"
             />
           </div>
         </div>
@@ -249,24 +234,33 @@ export default function MyChildPage() {
   const navigate = useNavigate();
   const [showAddModal, setShowAddModal] = useState(false);
 
-  const child = activeChild;
-  if (!child) {
-    navigate('/');
-    return null;
-  }
+  // All hooks MUST be before any conditional return
+  const childId = activeChild?.id;
 
   const childEntries = useMemo(
     () => (state.growthEntries || [])
-      .filter(e => e.childId === child.id)
+      .filter(e => e.childId === childId)
       .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)),
-    [state.growthEntries, child.id]
+    [state.growthEntries, childId]
   );
 
   const weightAlert = useMemo(
-    () => getWeightAlert(state.growthEntries || [], child.id),
-    [state.growthEntries, child.id]
+    () => childId ? getWeightAlert(state.growthEntries || [], childId) : null,
+    [state.growthEntries, childId]
   );
 
+  // Navigate away if no active child (in useEffect, not during render)
+  useEffect(() => {
+    if (!activeChild) {
+      navigate('/');
+    }
+  }, [activeChild, navigate]);
+
+  if (!activeChild) {
+    return null;
+  }
+
+  const child = activeChild;
   const bmi = calculateBMI(child.weight, child.height);
   const age = calculateAge(child.birthDate);
 
@@ -373,7 +367,7 @@ export default function MyChildPage() {
         <div className="grid grid-cols-3 gap-3">
           <div className="bg-white rounded-2xl shadow-sm p-4 text-center">
             <Ruler className="w-5 h-5 text-sage-500 mx-auto mb-1.5" />
-            <p className="text-lg font-bold text-gray-800">{child.height || '—'}</p>
+            <p className="text-lg font-bold text-gray-800">{child.height || '\u2014'}</p>
             <p className="text-[11px] text-gray-400">cm</p>
             {heightTrend !== null && (
               <div className={`flex items-center justify-center gap-0.5 mt-1 ${heightTrend >= 0 ? 'text-sage-600' : 'text-rose-500'}`}>
@@ -384,7 +378,7 @@ export default function MyChildPage() {
           </div>
           <div className="bg-white rounded-2xl shadow-sm p-4 text-center">
             <Weight className="w-5 h-5 text-sky-500 mx-auto mb-1.5" />
-            <p className="text-lg font-bold text-gray-800">{child.weight || '—'}</p>
+            <p className="text-lg font-bold text-gray-800">{child.weight || '\u2014'}</p>
             <p className="text-[11px] text-gray-400">kg</p>
             {weightTrend !== null && (
               <div className={`flex items-center justify-center gap-0.5 mt-1 ${weightTrend >= 0 ? 'text-sage-600' : 'text-rose-500'}`}>
@@ -395,7 +389,7 @@ export default function MyChildPage() {
           </div>
           <div className="bg-white rounded-2xl shadow-sm p-4 text-center">
             <Activity className="w-5 h-5 text-warm-500 mx-auto mb-1.5" />
-            <p className="text-lg font-bold text-gray-800">{bmi || '—'}</p>
+            <p className="text-lg font-bold text-gray-800">{bmi || '\u2014'}</p>
             <p className="text-[11px] text-gray-400">BMI</p>
           </div>
         </div>
