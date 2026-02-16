@@ -2,7 +2,7 @@ import { createContext, useContext, useReducer, useEffect, useRef, useCallback }
 import {
   saveChild, removeChild as removeChildFromDb, saveMeal, updateMeal,
   saveSymptom, removeSymptom as removeSymptomFromDb,
-  saveUserSettings, subscribeToUserData,
+  saveUserSettings, subscribeToUserData, uploadSymptomPhoto,
 } from '../lib/firestore';
 
 const AppContext = createContext(null);
@@ -154,6 +154,11 @@ function syncToFirestore(username, action) {
         break;
       case 'ADD_SYMPTOM':
         saveSymptom(username, action.payload);
+        // Upload photo to Firebase Storage if present (async, fire-and-forget)
+        if (action.payload.photoUrl) {
+          uploadSymptomPhoto(username, action.payload.id, action.payload.photoUrl)
+            .catch(err => console.error('Symptom photo upload error:', err));
+        }
         break;
       case 'REMOVE_SYMPTOM':
         removeSymptomFromDb(username, action.payload);
@@ -303,7 +308,15 @@ export function AppProvider({ children: reactChildren }) {
           break;
         case 'symptoms':
           if (data.length === 0 && current.symptoms.length > 0) return;
-          rawDispatch({ type: 'SYNC_FIRESTORE', payload: { symptoms: data } });
+          // Preserve local photoUrl (base64) and merge with Firestore photoStorageUrl
+          const mergedSymptoms = data.map(fsSymptom => {
+            const localSymptom = current.symptoms.find(s => s.id === fsSymptom.id);
+            return {
+              ...fsSymptom,
+              photoUrl: localSymptom?.photoUrl || null,
+            };
+          });
+          rawDispatch({ type: 'SYNC_FIRESTORE', payload: { symptoms: mergedSymptoms } });
           break;
       }
     });

@@ -1,7 +1,8 @@
 import {
   collection, doc, setDoc, deleteDoc, onSnapshot, query, orderBy, getDocs,
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { ref, uploadString, getDownloadURL, deleteObject } from 'firebase/storage';
+import { db, storage } from './firebase';
 
 /**
  * Firestore-Pfade: users/{username}/children, users/{username}/meals, users/{username}/symptoms
@@ -51,11 +52,41 @@ export async function updateMeal(username, partialMeal) {
 
 // --- Symptoms ---
 export async function saveSymptom(username, symptom) {
-  await setDoc(doc(symptomsCol(username), symptom.id), symptom);
+  const { photoUrl, ...fields } = symptom;
+  await setDoc(doc(symptomsCol(username), symptom.id), {
+    ...fields,
+    photoUrl: null, // Don't store base64 in Firestore — use Storage instead
+  });
 }
 
 export async function removeSymptom(username, symptomId) {
+  // Also delete photo from Storage if it exists
+  try {
+    const photoRef = ref(storage, `users/${username.toLowerCase()}/symptoms/${symptomId}.jpg`);
+    await deleteObject(photoRef);
+  } catch {
+    // Photo may not exist — ignore
+  }
   await deleteDoc(doc(symptomsCol(username), symptomId));
+}
+
+// --- Symptom Photos (Firebase Storage) ---
+export async function uploadSymptomPhoto(username, symptomId, base64DataUrl) {
+  const storageRef = ref(storage, `users/${username.toLowerCase()}/symptoms/${symptomId}.jpg`);
+  await uploadString(storageRef, base64DataUrl, 'data_url');
+  const downloadUrl = await getDownloadURL(storageRef);
+  // Store the download URL in the Firestore symptom document
+  await setDoc(doc(symptomsCol(username), symptomId), { photoStorageUrl: downloadUrl }, { merge: true });
+  return downloadUrl;
+}
+
+export async function getSymptomPhotoUrl(username, symptomId) {
+  try {
+    const storageRef = ref(storage, `users/${username.toLowerCase()}/symptoms/${symptomId}.jpg`);
+    return await getDownloadURL(storageRef);
+  } catch {
+    return null;
+  }
 }
 
 // --- Settings (activeChildId, onboardingComplete) ---

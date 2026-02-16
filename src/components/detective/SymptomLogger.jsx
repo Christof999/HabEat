@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { X, AlertTriangle, ThermometerSun, Moon, Frown, Wind, HelpCircle, Check } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { X, AlertTriangle, ThermometerSun, Moon, Frown, Wind, HelpCircle, Check, Camera, Image, Trash2 } from 'lucide-react';
 import { useApp } from '../../contexts/AppContext';
 
 const symptomTypes = [
@@ -19,12 +19,42 @@ const severityLevels = [
   { value: 5, label: 'Sehr stark', color: 'bg-rose-200 text-rose-800 ring-rose-400' },
 ];
 
+function compressImage(base64, maxWidth = 800) {
+  return new Promise((resolve) => {
+    const img = new window.Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const ratio = Math.min(maxWidth / img.width, 1);
+      canvas.width = img.width * ratio;
+      canvas.height = img.height * ratio;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', 0.7));
+    };
+    img.src = base64;
+  });
+}
+
 export default function SymptomLogger({ onClose }) {
   const { state, dispatch } = useApp();
   const [selectedType, setSelectedType] = useState(null);
   const [severity, setSeverity] = useState(3);
   const [notes, setNotes] = useState('');
+  const [photoPreview, setPhotoPreview] = useState(null);
   const [saved, setSaved] = useState(false);
+  const cameraRef = useRef(null);
+  const galleryRef = useRef(null);
+
+  const handlePhoto = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const compressed = await compressImage(ev.target.result);
+      setPhotoPreview(compressed);
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleSave = () => {
     if (!selectedType) return;
@@ -35,6 +65,7 @@ export default function SymptomLogger({ onClose }) {
       type: selectedType,
       severity,
       notes: notes.trim(),
+      photoUrl: photoPreview || null,
       timestamp: new Date().toISOString(),
     };
 
@@ -125,6 +156,63 @@ export default function SymptomLogger({ onClose }) {
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Photo Capture */}
+          {selectedType && (
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-3 block">Foto (optional)</label>
+              {photoPreview ? (
+                <div className="relative">
+                  <img
+                    src={photoPreview}
+                    alt="Symptom-Foto"
+                    className="w-full h-48 object-cover rounded-xl"
+                  />
+                  <button
+                    onClick={() => setPhotoPreview(null)}
+                    className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/50 flex items-center justify-center cursor-pointer"
+                  >
+                    <Trash2 className="w-4 h-4 text-white" />
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => cameraRef.current?.click()}
+                    className="flex items-center gap-2 p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition cursor-pointer"
+                  >
+                    <Camera className="w-4 h-4 text-gray-500" />
+                    <span className="text-sm text-gray-600">Kamera</span>
+                  </button>
+                  <button
+                    onClick={() => galleryRef.current?.click()}
+                    className="flex items-center gap-2 p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition cursor-pointer"
+                  >
+                    <Image className="w-4 h-4 text-gray-500" />
+                    <span className="text-sm text-gray-600">Galerie</span>
+                  </button>
+                  <input
+                    ref={cameraRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={handlePhoto}
+                    className="hidden"
+                  />
+                  <input
+                    ref={galleryRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handlePhoto}
+                    className="hidden"
+                  />
+                </div>
+              )}
+              <p className="text-[11px] text-gray-400 mt-2">
+                Hilfreich bei Hautausschlägen o.ä. für die Kinderärztin.
+              </p>
             </div>
           )}
 

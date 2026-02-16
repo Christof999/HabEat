@@ -1,4 +1,4 @@
-import { X, AlertTriangle, ThermometerSun, Moon, Frown, Wind, HelpCircle, Clock, FileText } from 'lucide-react';
+import { X, AlertTriangle, ThermometerSun, Moon, Frown, Wind, HelpCircle, Clock, FileText, Camera } from 'lucide-react';
 
 const symptomTypes = {
   skin: { label: 'Haut', sublabel: 'Ausschlag, Rötung, Juckreiz', icon: ThermometerSun, color: 'bg-rose-50 text-rose-600', bgLight: 'bg-rose-50' },
@@ -21,6 +21,7 @@ export default function SymptomDetailModal({ symptom, onClose }) {
   const typeInfo = symptomTypes[symptom.type] || symptomTypes.other;
   const Icon = typeInfo.icon;
   const severityInfo = severityLevels[symptom.severity - 1] || severityLevels[2];
+  const photoSrc = symptom.photoUrl || symptom.photoStorageUrl;
 
   const timestamp = new Date(symptom.timestamp);
   const dateStr = timestamp.toLocaleDateString('de-DE', {
@@ -38,8 +39,25 @@ export default function SymptomDetailModal({ symptom, onClose }) {
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-lg max-h-[90vh] overflow-y-auto safe-bottom">
+        {/* Photo */}
+        {photoSrc && (
+          <div className="relative">
+            <img
+              src={photoSrc}
+              alt="Symptom-Foto"
+              className="w-full h-56 object-cover rounded-t-3xl sm:rounded-t-3xl"
+            />
+            <button
+              onClick={onClose}
+              className="absolute top-4 right-4 w-8 h-8 rounded-full bg-black/50 flex items-center justify-center cursor-pointer"
+            >
+              <X className="w-4 h-4 text-white" />
+            </button>
+          </div>
+        )}
+
         {/* Header */}
-        <div className="sticky top-0 bg-white rounded-t-3xl px-6 py-5 border-b border-gray-100 flex items-center justify-between z-10">
+        <div className={`sticky top-0 bg-white ${!photoSrc ? 'rounded-t-3xl' : ''} px-6 py-5 border-b border-gray-100 flex items-center justify-between z-10`}>
           <div className="flex items-center gap-3">
             <div className={`w-10 h-10 rounded-xl ${typeInfo.color} flex items-center justify-center`}>
               <Icon className="w-5 h-5" />
@@ -49,12 +67,14 @@ export default function SymptomDetailModal({ symptom, onClose }) {
               <p className="text-xs text-gray-400">{typeInfo.sublabel}</p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center cursor-pointer"
-          >
-            <X className="w-4 h-4 text-gray-600" />
-          </button>
+          {!photoSrc && (
+            <button
+              onClick={onClose}
+              className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center cursor-pointer"
+            >
+              <X className="w-4 h-4 text-gray-600" />
+            </button>
+          )}
         </div>
 
         <div className="p-6 space-y-5">
@@ -100,7 +120,7 @@ export default function SymptomDetailModal({ symptom, onClose }) {
             </div>
           )}
 
-          {!symptom.notes && (
+          {!symptom.notes && !photoSrc && (
             <div className="bg-gray-50 rounded-xl p-4 text-center">
               <p className="text-sm text-gray-400">Keine Beschreibung hinterlegt</p>
             </div>

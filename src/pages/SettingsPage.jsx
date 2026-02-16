@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import {
   Baby, FileText, Trash2, ChevronRight, LogOut,
-  Info, Shield, X, Users,
+  Info, Shield, X, Users, Loader2,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useApp } from '../contexts/AppContext';
 import { deleteAllUserData } from '../lib/firestore';
+import { analyzeCorrelations } from '../lib/detectiveEngine';
+import { generatePdfReport } from '../lib/pdfReport';
 import EditChildModal from '../components/settings/EditChildModal';
 
 export default function SettingsPage() {
@@ -42,58 +44,21 @@ export default function SettingsPage() {
     setEditingChild(null);
   };
 
-  const handleExport = () => {
-    if (!activeChild) return;
+  const [exporting, setExporting] = useState(false);
 
-    const childMeals = state.meals.filter(m => m.childId === activeChild.id);
-    const childSymptoms = state.symptoms.filter(s => s.childId === activeChild.id);
-
-    const lines = [
-      `HABEAT — ERNÄHRUNGSBERICHT`,
-      `===========================`,
-      ``,
-      `Kind: ${activeChild.name}`,
-      `Geburtsdatum: ${new Date(activeChild.birthDate).toLocaleDateString('de-DE')}`,
-      activeChild.height ? `Größe: ${activeChild.height} cm` : null,
-      activeChild.weight ? `Gewicht: ${activeChild.weight} kg` : null,
-      `Bekannte Allergien: ${activeChild.knownAllergies?.length > 0 ? activeChild.knownAllergies.join(', ') : 'Keine'}`,
-      ``,
-      `Erstellt am: ${new Date().toLocaleDateString('de-DE')}`,
-      ``,
-      `----------------------------`,
-      `MAHLZEITEN (${childMeals.length})`,
-      `----------------------------`,
-      '',
-      ...childMeals.flatMap(m => [
-        `${new Date(m.timestamp).toLocaleString('de-DE')} — ${m.title}`,
-        m.ingredients?.length > 0 ? `  Zutaten: ${m.ingredients.join(', ')}` : null,
-        m.calories ? `  Kalorien: ${m.calories} kcal | Protein: ${m.protein}g | KH: ${m.carbs}g | Fett: ${m.fat}g` : null,
-        m.allergens?.length > 0 ? `  ⚠ Allergene: ${m.allergens.join(', ')}` : null,
-        m.notes ? `  Notizen: ${m.notes}` : null,
-        '',
-      ]),
-      `----------------------------`,
-      `SYMPTOME (${childSymptoms.length})`,
-      `----------------------------`,
-      '',
-      ...childSymptoms.flatMap(s => [
-        `${new Date(s.timestamp).toLocaleString('de-DE')} — ${s.type} (Schweregrad: ${s.severity}/5)`,
-        s.notes ? `  Notizen: ${s.notes}` : null,
-        '',
-      ]),
-      ``,
-      `---`,
-      `Dieser Bericht wurde mit HabEat erstellt und dient nur zur Information.`,
-      `Bitte besprich alle Beobachtungen mit deinem Kinderarzt.`,
-    ].filter(l => l !== null);
-
-    const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `HabEat_${activeChild.name}_${new Date().toISOString().slice(0, 10)}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const handleExport = async () => {
+    if (!activeChild || exporting) return;
+    setExporting(true);
+    try {
+      const childMeals = state.meals.filter(m => m.childId === activeChild.id);
+      const childSymptoms = state.symptoms.filter(s => s.childId === activeChild.id);
+      const correlation = analyzeCorrelations(childMeals, childSymptoms);
+      await generatePdfReport(activeChild, childMeals, childSymptoms, correlation);
+    } catch (err) {
+      console.error('PDF export error:', err);
+    } finally {
+      setExporting(false);
+    }
   };
 
   const sections = [
@@ -122,9 +87,9 @@ export default function SettingsPage() {
       title: 'App',
       items: [
         {
-          icon: FileText,
-          label: 'Bericht exportieren',
-          sublabel: 'Textbericht für den Kinderarzt',
+          icon: exporting ? Loader2 : FileText,
+          label: exporting ? 'Wird erstellt...' : 'PDF-Bericht exportieren',
+          sublabel: 'Mit Fotos, Symptomen & Detektiv-Ergebnissen',
           action: handleExport,
         },
         {

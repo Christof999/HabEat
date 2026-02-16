@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, CalendarDays, AlertTriangle, ThermometerSun, Moon,
-  Frown, Wind, HelpCircle, Clock, ChevronDown, ChevronUp,
+  Frown, Wind, HelpCircle, Clock, ChevronDown, ChevronUp, Camera,
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import SymptomDetailModal from '../components/detective/SymptomDetailModal';
@@ -211,9 +211,14 @@ export default function SymptomHistoryPage() {
 
                           {/* Details */}
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-800">
-                              {SYMPTOM_LABELS[symptom.type]}
-                            </p>
+                            <div className="flex items-center gap-1.5">
+                              <p className="text-sm font-medium text-gray-800">
+                                {SYMPTOM_LABELS[symptom.type]}
+                              </p>
+                              {(symptom.photoUrl || symptom.photoStorageUrl) && (
+                                <Camera className="w-3 h-3 text-gray-400" />
+                              )}
+                            </div>
                             <p className="text-[11px] text-gray-400 truncate">
                               {symptom.notes || 'Keine Beschreibung'}
                             </p>
