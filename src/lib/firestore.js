@@ -36,6 +36,11 @@ export async function saveChild(username, child) {
   });
 }
 
+export async function updateChild(username, partialChild) {
+  const { photoUrl, ...fields } = partialChild;
+  await setDoc(doc(childrenCol(username), partialChild.id), fields, { merge: true });
+}
+
 export async function removeChild(username, childId) {
   await deleteDoc(doc(childrenCol(username), childId));
 }

@@ -1,6 +1,6 @@
 import { createContext, useContext, useReducer, useEffect, useRef, useCallback } from 'react';
 import {
-  saveChild, removeChild as removeChildFromDb, saveMeal, updateMeal,
+  saveChild, updateChild, removeChild as removeChildFromDb, saveMeal, updateMeal,
   saveSymptom, removeSymptom as removeSymptomFromDb,
   saveGrowthEntry, removeGrowthEntry as removeGrowthEntryFromDb,
   saveUserSettings, subscribeToUserData, uploadSymptomPhoto,
@@ -151,8 +151,10 @@ function syncToFirestore(username, action) {
   try {
     switch (action.type) {
       case 'ADD_CHILD':
-      case 'UPDATE_CHILD':
         saveChild(username, action.payload);
+        break;
+      case 'UPDATE_CHILD':
+        updateChild(username, action.payload);
         break;
       case 'REMOVE_CHILD':
         removeChildFromDb(username, action.payload);
