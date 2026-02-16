@@ -28,7 +28,7 @@ export default function OnboardingSummary({ children, onAddAnother, onComplete, 
                 <img src={child.photoUrl} alt={child.name} className="w-full h-full object-cover" />
               ) : (
                 <span className="text-xl font-bold text-gray-700">
-                  {child.name.charAt(0).toUpperCase()}
+                  {(child.name || '?').charAt(0).toUpperCase()}
                 </span>
               )}
             </div>

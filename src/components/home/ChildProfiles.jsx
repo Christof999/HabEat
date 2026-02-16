@@ -19,7 +19,7 @@ export default function ChildProfiles({ onAddChild }) {
   return (
     <div className="py-4">
       <div className="flex items-center gap-3 overflow-x-auto scrollbar-hide pb-2 px-6">
-        {state.children.map(child => {
+        {state.children.filter(c => c && c.id && c.name).map(child => {
           const isActive = child.id === state.activeChildId;
           return (
             <button
@@ -46,7 +46,7 @@ export default function ChildProfiles({ onAddChild }) {
                     />
                   ) : (
                     <span className="text-lg font-bold text-gray-700">
-                      {child.name.charAt(0).toUpperCase()}
+                      {(child.name || '?').charAt(0).toUpperCase()}
                     </span>
                   )}
                 </div>
@@ -56,7 +56,7 @@ export default function ChildProfiles({ onAddChild }) {
                   isActive ? 'text-gray-800' : 'text-gray-500'
                 }`}
               >
-                {child.name}
+                {child.name || 'Unbenannt'}
               </span>
             </button>
           );

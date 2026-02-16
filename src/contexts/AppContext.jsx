@@ -303,8 +303,10 @@ export function AppProvider({ children: reactChildren }) {
             return; // Don't overwrite local — Firestore will trigger again after seeding
           }
           if (data.length > 0) {
+            // Filter out malformed children (e.g. missing name/id from Firestore)
+            const validChildren = data.filter(c => c && c.id && c.name);
             // Preserve local photoUrl (not stored in Firestore, base64 too large)
-            const mergedChildren = data.map(fsChild => {
+            const mergedChildren = validChildren.map(fsChild => {
               const localChild = current.children.find(c => c.id === fsChild.id);
               return { ...fsChild, photoUrl: localChild?.photoUrl || null };
             });

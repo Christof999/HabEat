@@ -317,13 +317,13 @@ export default function MyChildPage() {
           <div className="flex items-center gap-4">
             <div className={`w-16 h-16 rounded-full ${child.avatarColor} flex items-center justify-center shrink-0 overflow-hidden`}>
               {child.photoUrl ? (
-                <img src={child.photoUrl} alt={child.name} className="w-full h-full object-cover" />
+                <img src={child.photoUrl} alt={child.name || ''} className="w-full h-full object-cover" />
               ) : (
-                <span className="text-xl font-bold text-gray-700">{child.name.charAt(0).toUpperCase()}</span>
+                <span className="text-xl font-bold text-gray-700">{(child.name || '?').charAt(0).toUpperCase()}</span>
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <h2 className="text-lg font-bold text-gray-800">{child.name}</h2>
+              <h2 className="text-lg font-bold text-gray-800">{child.name || 'Unbenannt'}</h2>
               <div className="flex items-center gap-2 mt-1">
                 <Baby className="w-3.5 h-3.5 text-gray-400" />
                 <span className="text-sm text-gray-500">{age}</span>
