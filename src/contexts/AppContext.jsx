@@ -36,6 +36,11 @@ function appReducer(state, action) {
       };
 
     case 'LOGOUT':
+      // Clear per-user localStorage so stale data can't leak into another session
+      if (state.currentUser) {
+        localStorage.removeItem(storageKey(state.currentUser));
+      }
+      localStorage.removeItem('habeat-last-user');
       return { ...initialState };
 
     case 'SET_ONBOARDING_COMPLETE':
@@ -237,13 +242,24 @@ export function AppProvider({ children: reactChildren }) {
     }
   }, [state.emergencyContacts, state.currentUser, state.firestoreReady, state.grandparentMode]);
 
+  // Reset seeded flag on user change so new accounts don't skip seeding
+  useEffect(() => {
+    seededRef.current = false;
+  }, [state.currentUser]);
+
   // Subscribe to Firestore when logged in
   useEffect(() => {
     if (!state.loggedIn || !state.currentUser || firestoreListening.current) return;
     firestoreListening.current = true;
 
+    // Capture the username this listener was created for
+    const listenerUser = state.currentUser;
+
     const unsub = subscribeToUserData(state.currentUser, (type, data) => {
       const current = stateRef.current;
+
+      // Guard: ignore callbacks if the user has changed (race condition on account switch)
+      if (current.currentUser !== listenerUser) return;
 
       switch (type) {
         case 'settings':
