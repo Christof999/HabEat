@@ -24,6 +24,10 @@ function symptomsCol(username) {
   return collection(db, 'users', username.toLowerCase(), 'symptoms');
 }
 
+function growthCol(username) {
+  return collection(db, 'users', username.toLowerCase(), 'growth');
+}
+
 // --- Children ---
 export async function saveChild(username, child) {
   await setDoc(doc(childrenCol(username), child.id), {
@@ -89,6 +93,15 @@ export async function getSymptomPhotoUrl(username, symptomId) {
   }
 }
 
+// --- Growth Entries ---
+export async function saveGrowthEntry(username, entry) {
+  await setDoc(doc(growthCol(username), entry.id), entry);
+}
+
+export async function removeGrowthEntry(username, entryId) {
+  await deleteDoc(doc(growthCol(username), entryId));
+}
+
 // --- Settings (activeChildId, onboardingComplete) ---
 export async function saveUserSettings(username, settings) {
   await setDoc(userRef(username), settings, { merge: true });
@@ -96,7 +109,7 @@ export async function saveUserSettings(username, settings) {
 
 // --- Delete all user data ---
 export async function deleteAllUserData(username) {
-  const collections = [childrenCol(username), mealsCol(username), symptomsCol(username)];
+  const collections = [childrenCol(username), mealsCol(username), symptomsCol(username), growthCol(username)];
   for (const col of collections) {
     const snap = await getDocs(col);
     await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
@@ -138,6 +151,14 @@ export function subscribeToUserData(username, onData) {
     onSnapshot(query(symptomsCol(username), orderBy('timestamp', 'desc')), (snap) => {
       const symptoms = snap.docs.map(d => d.data());
       onData('symptoms', symptoms);
+    })
+  );
+
+  // Listen to growth entries
+  unsubscribers.push(
+    onSnapshot(query(growthCol(username), orderBy('timestamp', 'desc')), (snap) => {
+      const entries = snap.docs.map(d => d.data());
+      onData('growth', entries);
     })
   );
 

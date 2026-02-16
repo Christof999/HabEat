@@ -11,7 +11,7 @@ const avatarColors = [
   'bg-sage-300', 'bg-sky-300', 'bg-warm-300', 'bg-rose-300',
 ];
 
-export default function EditChildModal({ child, onSave, onDelete, onClose }) {
+export default function EditChildModal({ child, onSave, onDelete, onClose, onGrowthEntry }) {
   const [form, setForm] = useState({
     name: child.name,
     birthDate: child.birthDate,
@@ -59,11 +59,27 @@ export default function EditChildModal({ child, onSave, onDelete, onClose }) {
 
   const handleSave = () => {
     if (!form.name.trim() || !form.birthDate) return;
+    const newHeight = form.height ? parseFloat(form.height) : null;
+    const newWeight = form.weight ? parseFloat(form.weight) : null;
+
+    // Auto-create growth entry if height or weight changed
+    const heightChanged = newHeight !== (child.height || null);
+    const weightChanged = newWeight !== (child.weight || null);
+    if ((heightChanged || weightChanged) && (newHeight || newWeight) && onGrowthEntry) {
+      onGrowthEntry({
+        id: crypto.randomUUID(),
+        childId: child.id,
+        height: newHeight,
+        weight: newWeight,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
     onSave({
       ...child,
       ...form,
-      height: form.height ? parseFloat(form.height) : null,
-      weight: form.weight ? parseFloat(form.weight) : null,
+      height: newHeight,
+      weight: newWeight,
     });
   };
 

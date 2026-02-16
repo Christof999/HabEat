@@ -2,6 +2,7 @@ import { createContext, useContext, useReducer, useEffect, useRef, useCallback }
 import {
   saveChild, removeChild as removeChildFromDb, saveMeal, updateMeal,
   saveSymptom, removeSymptom as removeSymptomFromDb,
+  saveGrowthEntry, removeGrowthEntry as removeGrowthEntryFromDb,
   saveUserSettings, subscribeToUserData, uploadSymptomPhoto,
 } from '../lib/firestore';
 
@@ -17,6 +18,7 @@ const initialState = {
   activeChildId: null,
   meals: [],
   symptoms: [],
+  growthEntries: [],
   emergencyContacts: [],
   firestoreReady: false,
 };
@@ -102,6 +104,15 @@ function appReducer(state, action) {
         symptoms: state.symptoms.filter(s => s.id !== action.payload),
       };
 
+    case 'ADD_GROWTH_ENTRY':
+      return { ...state, growthEntries: [action.payload, ...state.growthEntries] };
+
+    case 'REMOVE_GROWTH_ENTRY':
+      return {
+        ...state,
+        growthEntries: state.growthEntries.filter(g => g.id !== action.payload),
+      };
+
     case 'ADD_EMERGENCY_CONTACT':
       return { ...state, emergencyContacts: [...state.emergencyContacts, action.payload] };
 
@@ -163,6 +174,12 @@ function syncToFirestore(username, action) {
       case 'REMOVE_SYMPTOM':
         removeSymptomFromDb(username, action.payload);
         break;
+      case 'ADD_GROWTH_ENTRY':
+        saveGrowthEntry(username, action.payload);
+        break;
+      case 'REMOVE_GROWTH_ENTRY':
+        removeGrowthEntryFromDb(username, action.payload);
+        break;
       case 'ADD_EMERGENCY_CONTACT':
       case 'UPDATE_EMERGENCY_CONTACT':
       case 'REMOVE_EMERGENCY_CONTACT':
@@ -197,6 +214,7 @@ function seedFirestoreFromLocal(username, localState) {
   localState.children.forEach(child => saveChild(username, child));
   localState.meals.forEach(meal => saveMeal(username, meal));
   localState.symptoms.forEach(symptom => saveSymptom(username, symptom));
+  (localState.growthEntries || []).forEach(entry => saveGrowthEntry(username, entry));
 }
 
 function storageKey(username) {
@@ -317,6 +335,10 @@ export function AppProvider({ children: reactChildren }) {
             };
           });
           rawDispatch({ type: 'SYNC_FIRESTORE', payload: { symptoms: mergedSymptoms } });
+          break;
+        case 'growth':
+          if (data.length === 0 && current.growthEntries.length > 0) return;
+          rawDispatch({ type: 'SYNC_FIRESTORE', payload: { growthEntries: data } });
           break;
       }
     });

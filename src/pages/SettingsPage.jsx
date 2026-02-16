@@ -53,7 +53,7 @@ export default function SettingsPage() {
       const childMeals = state.meals.filter(m => m.childId === activeChild.id);
       const childSymptoms = state.symptoms.filter(s => s.childId === activeChild.id);
       const correlation = analyzeCorrelations(childMeals, childSymptoms);
-      await generatePdfReport(activeChild, childMeals, childSymptoms, correlation);
+      await generatePdfReport(activeChild, childMeals, childSymptoms, correlation, state.growthEntries || []);
     } catch (err) {
       console.error('PDF export error:', err);
     } finally {
@@ -194,6 +194,7 @@ export default function SettingsPage() {
           onSave={handleSaveChild}
           onDelete={handleDeleteChild}
           onClose={() => setEditingChild(null)}
+          onGrowthEntry={(entry) => dispatch({ type: 'ADD_GROWTH_ENTRY', payload: entry })}
         />
       )}
 

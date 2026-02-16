@@ -1,8 +1,20 @@
+import { useNavigate } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import { useApp } from '../../contexts/AppContext';
 
 export default function ChildProfiles({ onAddChild }) {
   const { state, dispatch } = useApp();
+  const navigate = useNavigate();
+
+  const handleChildClick = (child) => {
+    if (child.id === state.activeChildId) {
+      // Already active → navigate to "Mein Kind" page
+      navigate('/my-child');
+    } else {
+      // Switch active child
+      dispatch({ type: 'SET_ACTIVE_CHILD', payload: child.id });
+    }
+  };
 
   return (
     <div className="py-4">
@@ -12,7 +24,7 @@ export default function ChildProfiles({ onAddChild }) {
           return (
             <button
               key={child.id}
-              onClick={() => dispatch({ type: 'SET_ACTIVE_CHILD', payload: child.id })}
+              onClick={() => handleChildClick(child)}
               className="flex flex-col items-center gap-1.5 shrink-0 cursor-pointer"
             >
               {/* Outer ring wrapper — part of the flow, never clipped */}
@@ -61,7 +73,7 @@ export default function ChildProfiles({ onAddChild }) {
                 <Plus className="w-5 h-5 text-sage-400" />
               </div>
             </div>
-            <span className="text-xs font-medium text-gray-400">Hinzufügen</span>
+            <span className="text-xs font-medium text-gray-400">Hinzufuegen</span>
           </button>
         )}
       </div>

@@ -88,7 +88,7 @@ async function loadImageAsBase64(url) {
   }
 }
 
-export async function generatePdfReport(child, meals, symptoms, correlation) {
+export async function generatePdfReport(child, meals, symptoms, correlation, growthEntries = []) {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -261,6 +261,76 @@ export async function generatePdfReport(child, meals, symptoms, correlation) {
   }
 
   y += 4;
+
+  // --- GROWTH SECTION ---
+  const childGrowth = growthEntries
+    .filter(e => e.childId === child.id)
+    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+  if (childGrowth.length > 0) {
+    y = checkPageBreak(doc, y, 20, pageHeight);
+    y = addSectionTitle(doc, y, `WACHSTUMSVERLAUF (${childGrowth.length} Messungen)`, pageWidth);
+
+    // Table header
+    doc.setFillColor(229, 231, 235); // gray-200
+    doc.roundedRect(14, y, contentWidth, 8, 1, 1, 'F');
+    doc.setTextColor(...COLORS.black);
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Datum', 17, y + 5.5);
+    doc.text('Groesse (cm)', 60, y + 5.5);
+    doc.text('Gewicht (kg)', 100, y + 5.5);
+    doc.text('BMI', 140, y + 5.5);
+    y += 10;
+
+    for (const entry of childGrowth) {
+      y = checkPageBreak(doc, y, 8, pageHeight);
+
+      doc.setFillColor(...COLORS.bg);
+      doc.roundedRect(14, y, contentWidth, 7, 1, 1, 'F');
+
+      const gDate = new Date(entry.timestamp);
+      doc.setTextColor(...COLORS.secondary);
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'normal');
+      doc.text(gDate.toLocaleDateString('de-DE'), 17, y + 5);
+
+      doc.setTextColor(...COLORS.black);
+      doc.text(entry.height ? `${entry.height}` : '—', 60, y + 5);
+      doc.text(entry.weight ? `${entry.weight}` : '—', 100, y + 5);
+
+      if (entry.weight && entry.height) {
+        const bmi = (entry.weight / ((entry.height / 100) ** 2)).toFixed(1);
+        doc.text(bmi, 140, y + 5);
+      } else {
+        doc.text('—', 140, y + 5);
+      }
+
+      y += 9;
+    }
+
+    // Weight trend alert
+    if (childGrowth.length >= 2) {
+      const latest = childGrowth[childGrowth.length - 1];
+      const first = childGrowth[0];
+      if (latest.weight && first.weight) {
+        const change = ((latest.weight - first.weight) / first.weight * 100).toFixed(1);
+        y += 2;
+        doc.setTextColor(change < 0 ? COLORS.danger[0] : COLORS.primary[0],
+                         change < 0 ? COLORS.danger[1] : COLORS.primary[1],
+                         change < 0 ? COLORS.danger[2] : COLORS.primary[2]);
+        doc.setFontSize(7);
+        doc.setFont('helvetica', 'bold');
+        doc.text(
+          `Gewichtsentwicklung: ${change > 0 ? '+' : ''}${change}% (${first.weight} kg → ${latest.weight} kg)`,
+          17, y + 4
+        );
+        y += 8;
+      }
+    }
+
+    y += 4;
+  }
 
   // --- DETECTIVE RESULTS ---
   if (correlation?.suspects?.length > 0) {

@@ -12,6 +12,7 @@ import DetectivePage from './pages/DetectivePage';
 import SymptomHistoryPage from './pages/SymptomHistoryPage';
 import EmergencyPage from './pages/EmergencyPage';
 import SettingsPage from './pages/SettingsPage';
+import MyChildPage from './pages/MyChildPage';
 import GrandparentEntryPage from './pages/GrandparentEntryPage';
 import GrandparentHomePage from './pages/GrandparentHomePage';
 import GrandparentSymptomsPage from './pages/GrandparentSymptomsPage';
@@ -69,6 +70,7 @@ function App() {
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/detective" element={<DetectivePage />} />
         <Route path="/detective/symptoms" element={<SymptomHistoryPage />} />
+        <Route path="/my-child" element={<MyChildPage />} />
         <Route path="/emergency" element={<EmergencyPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>
