@@ -337,7 +337,7 @@ export function AppProvider({ children: reactChildren }) {
           rawDispatch({ type: 'SYNC_FIRESTORE', payload: { symptoms: mergedSymptoms } });
           break;
         case 'growth':
-          if (data.length === 0 && current.growthEntries.length > 0) return;
+          if (data.length === 0 && (current.growthEntries || []).length > 0) return;
           rawDispatch({ type: 'SYNC_FIRESTORE', payload: { growthEntries: data } });
           break;
       }

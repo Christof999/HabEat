@@ -118,6 +118,10 @@ export async function deleteAllUserData(username) {
 }
 
 // --- Real-time listeners ---
+function onListenerError(collectionName) {
+  return (err) => console.error(`Firestore listener error (${collectionName}):`, err);
+}
+
 export function subscribeToUserData(username, onData) {
   const unsubscribers = [];
 
@@ -127,7 +131,7 @@ export function subscribeToUserData(username, onData) {
       if (snap.exists()) {
         onData('settings', snap.data());
       }
-    })
+    }, onListenerError('settings'))
   );
 
   // Listen to children
@@ -135,7 +139,7 @@ export function subscribeToUserData(username, onData) {
     onSnapshot(childrenCol(username), (snap) => {
       const children = snap.docs.map(d => d.data());
       onData('children', children);
-    })
+    }, onListenerError('children'))
   );
 
   // Listen to meals (ordered by timestamp desc)
@@ -143,7 +147,7 @@ export function subscribeToUserData(username, onData) {
     onSnapshot(query(mealsCol(username), orderBy('timestamp', 'desc')), (snap) => {
       const meals = snap.docs.map(d => d.data());
       onData('meals', meals);
-    })
+    }, onListenerError('meals'))
   );
 
   // Listen to symptoms
@@ -151,7 +155,7 @@ export function subscribeToUserData(username, onData) {
     onSnapshot(query(symptomsCol(username), orderBy('timestamp', 'desc')), (snap) => {
       const symptoms = snap.docs.map(d => d.data());
       onData('symptoms', symptoms);
-    })
+    }, onListenerError('symptoms'))
   );
 
   // Listen to growth entries
@@ -159,7 +163,7 @@ export function subscribeToUserData(username, onData) {
     onSnapshot(query(growthCol(username), orderBy('timestamp', 'desc')), (snap) => {
       const entries = snap.docs.map(d => d.data());
       onData('growth', entries);
-    })
+    }, onListenerError('growth'))
   );
 
   return () => unsubscribers.forEach(unsub => unsub());
