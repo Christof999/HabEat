@@ -9,6 +9,7 @@ import HomePage from './pages/HomePage';
 import TrackingPage from './pages/TrackingPage';
 import HistoryPage from './pages/HistoryPage';
 import DetectivePage from './pages/DetectivePage';
+import SymptomHistoryPage from './pages/SymptomHistoryPage';
 import EmergencyPage from './pages/EmergencyPage';
 import SettingsPage from './pages/SettingsPage';
 import GrandparentEntryPage from './pages/GrandparentEntryPage';
@@ -67,6 +68,7 @@ function App() {
         <Route path="/" element={<HomePage />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/detective" element={<DetectivePage />} />
+        <Route path="/detective/symptoms" element={<SymptomHistoryPage />} />
         <Route path="/emergency" element={<EmergencyPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>

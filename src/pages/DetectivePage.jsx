@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Search, ShieldCheck, AlertTriangle, TrendingUp, Sparkles,
   Loader2, ChevronRight, Info, Plus, Clock, X, Brain,
-  ThermometerSun, Moon, Frown, Wind, HelpCircle,
+  ThermometerSun, Moon, Frown, Wind, HelpCircle, ClipboardList,
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import { analyzeCorrelations, analyzeWithAI } from '../lib/detectiveEngine';
@@ -28,6 +29,7 @@ const SYMPTOM_LABELS = {
 
 export default function DetectivePage() {
   const { state, activeChild } = useApp();
+  const navigate = useNavigate();
   const [showSymptomLogger, setShowSymptomLogger] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -327,44 +329,23 @@ export default function DetectivePage() {
           </div>
         )}
 
-        {/* Recent Symptoms */}
-        {recentSymptoms.length > 0 && (
-          <div>
-            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3 px-1">
-              Letzte Symptome
-            </h2>
-            <div className="bg-white rounded-2xl shadow-sm divide-y divide-gray-50 overflow-hidden">
-              {recentSymptoms.map(symptom => {
-                const SymptomIcon = SYMPTOM_ICONS[symptom.type] || AlertTriangle;
-                return (
-                  <div key={symptom.id} className="px-5 py-3.5 flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-lg bg-gray-50 flex items-center justify-center shrink-0">
-                      <SymptomIcon className="w-4 h-4 text-gray-500" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-800">{SYMPTOM_LABELS[symptom.type]}</p>
-                      <p className="text-[11px] text-gray-400">
-                        Schweregrad {symptom.severity}/5 ·{' '}
-                        {new Date(symptom.timestamp).toLocaleString('de-DE', {
-                          day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
-                        })}
-                      </p>
-                    </div>
-                    <div className="flex gap-0.5">
-                      {Array.from({ length: 5 }).map((_, i) => (
-                        <div
-                          key={i}
-                          className={`w-1.5 h-4 rounded-full ${
-                            i < symptom.severity ? 'bg-warm-400' : 'bg-gray-200'
-                          }`}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
+        {/* Symptom History Link */}
+        {childSymptoms.length > 0 && (
+          <button
+            onClick={() => navigate('/detective/symptoms')}
+            className="w-full bg-white rounded-2xl p-4 shadow-sm flex items-center gap-4 hover:shadow-md transition cursor-pointer text-left"
+          >
+            <div className="w-12 h-12 rounded-xl bg-warm-50 flex items-center justify-center shrink-0">
+              <ClipboardList className="w-5 h-5 text-warm-600" />
             </div>
-          </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold text-gray-800 text-sm">Symptom-Verlauf</h3>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {childSymptoms.length} {childSymptoms.length === 1 ? 'Symptom' : 'Symptome'} · nach Tag und Uhrzeit
+              </p>
+            </div>
+            <ChevronRight className="w-4 h-4 text-gray-300" />
+          </button>
         )}
 
         {/* Data Summary */}
