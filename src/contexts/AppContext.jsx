@@ -305,14 +305,35 @@ export function AppProvider({ children: reactChildren }) {
             return; // Don't overwrite local — Firestore will trigger again after seeding
           }
           if (data.length > 0) {
-            // Filter out malformed children (e.g. missing name/id from Firestore)
-            const validChildren = data.filter(c => c && c.id && c.name);
-            // Preserve local photoUrl (not stored in Firestore, base64 too large)
-            const mergedChildren = validChildren.map(fsChild => {
-              const localChild = current.children.find(c => c.id === fsChild.id);
-              return { ...fsChild, photoUrl: localChild?.photoUrl || null };
+            // Merge Firestore children with local data: if Firestore has
+            // an incomplete record (e.g. missing name due to a failed
+            // initial save), fill in gaps from the local copy.
+            const mergedChildren = data
+              .filter(c => c && c.id)
+              .map(fsChild => {
+                const localChild = current.children.find(c => c.id === fsChild.id);
+                // Local data fills gaps, Firestore data wins for fields it has
+                return {
+                  ...(localChild || {}),
+                  ...fsChild,
+                  photoUrl: localChild?.photoUrl || null,
+                };
+              })
+              .filter(c => c.name); // only keep children that have a name after merge
+
+            // Preserve local-only children that haven't synced to Firestore yet
+            // (e.g. initial saveChild failed due to network error)
+            const firestoreIds = new Set(data.map(c => c.id));
+            const localOnly = current.children.filter(
+              c => c && c.id && c.name && !firestoreIds.has(c.id)
+            );
+            // Re-try saving local-only children to Firestore
+            localOnly.forEach(c => saveChild(current.currentUser, c));
+
+            rawDispatch({
+              type: 'SYNC_FIRESTORE',
+              payload: { children: [...mergedChildren, ...localOnly] },
             });
-            rawDispatch({ type: 'SYNC_FIRESTORE', payload: { children: mergedChildren } });
           }
           break;
         case 'meals':

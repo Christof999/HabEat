@@ -278,11 +278,13 @@ export default function MyChildPage() {
 
   const handleAddEntry = (entry) => {
     dispatch({ type: 'ADD_GROWTH_ENTRY', payload: entry });
-    // Also update child's current height/weight
+    // Update child's current height/weight — pass full child object so
+    // Firestore always receives a complete document (prevents data loss
+    // if the original ADD_CHILD write failed due to network errors).
     dispatch({
       type: 'UPDATE_CHILD',
       payload: {
-        id: child.id,
+        ...child,
         ...(entry.height && { height: entry.height }),
         ...(entry.weight && { weight: entry.weight }),
       },
