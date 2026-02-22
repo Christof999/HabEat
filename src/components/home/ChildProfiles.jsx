@@ -30,7 +30,7 @@ export default function ChildProfiles({ onAddChild }) {
                   />
                 ) : (
                   <span className="text-lg font-bold text-gray-700">
-                    {child.name.charAt(0).toUpperCase()}
+                    {(child.name?.trim()?.[0] || '?').toUpperCase()}
                   </span>
                 )}
               </div>

@@ -77,7 +77,7 @@ export default function SettingsPage() {
                 >
                   {item.avatarColor ? (
                     <div className={`w-9 h-9 rounded-full ${item.avatarColor} flex items-center justify-center`}>
-                      <span className="text-sm font-bold text-gray-700">{item.label.charAt(0)}</span>
+                      <span className="text-sm font-bold text-gray-700">{(item.label?.trim()?.[0] || '?').toUpperCase()}</span>
                     </div>
                   ) : (
                     <div className="w-9 h-9 rounded-xl bg-sage-50 flex items-center justify-center">

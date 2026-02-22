@@ -25,7 +25,7 @@ export default function OnboardingSummary({ children, onAddAnother, onComplete, 
           >
             <div className={`w-14 h-14 rounded-full ${child.avatarColor} flex items-center justify-center shrink-0`}>
               <span className="text-xl font-bold text-gray-700">
-                {child.name.charAt(0).toUpperCase()}
+                  {(child.name?.trim()?.[0] || '?').toUpperCase()}
               </span>
             </div>
             <div className="flex-1 min-w-0">

@@ -60,7 +60,7 @@ export default function EmergencyPage() {
             <div className="flex items-center gap-3">
               <div className={`w-12 h-12 rounded-full ${activeChild.avatarColor} flex items-center justify-center`}>
                 <span className="text-lg font-bold text-gray-700">
-                  {activeChild.name.charAt(0).toUpperCase()}
+                  {(activeChild.name?.trim()?.[0] || '?').toUpperCase()}
                 </span>
               </div>
               <div>

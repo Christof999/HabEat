@@ -19,6 +19,10 @@ const initialState = {
 };
 
 function normalizeChild(child) {
+  const safeName = typeof child?.name === 'string' && child.name.trim().length > 0
+    ? child.name.trim()
+    : 'Unbekannt';
+
   const knownAllergies = Array.isArray(child?.knownAllergies)
     ? child.knownAllergies
     : Array.isArray(child?.allergies)
@@ -27,6 +31,7 @@ function normalizeChild(child) {
 
   return {
     ...child,
+    name: safeName,
     knownAllergies,
     allergies: knownAllergies,
   };
