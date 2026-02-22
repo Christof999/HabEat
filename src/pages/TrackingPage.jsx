@@ -2,7 +2,6 @@ import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Camera, Image, Sparkles, Loader2, MapPin, StickyNote, Check, AlertCircle } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
-import { analyzeImageWithGemini } from '../lib/gemini';
 
 export default function TrackingPage() {
   const { state, dispatch, activeChild } = useApp();
@@ -16,6 +15,27 @@ export default function TrackingPage() {
   const [notes, setNotes] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState(null);
+
+  const runMealVerification = async (base64Image) => {
+    const response = await fetch('/api/meals/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        imageBase64: base64Image,
+        childContext: {
+          allergies: activeChild?.allergies || [],
+        },
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data?.error || `API Fehler: ${response.status}`);
+    }
+
+    return data;
+  };
 
   const handleCapture = (source) => {
     if (source === 'camera') {
@@ -43,35 +63,9 @@ export default function TrackingPage() {
     setIsAnalyzing(true);
     setAnalyzeError(null);
 
-    const childAllergies = activeChild?.allergies?.length > 0
-      ? `Das Kind hat bekannte Allergien/Unverträglichkeiten: ${activeChild.allergies.join(', ')}.`
-      : '';
-
-    const prompt = `Du bist ein Ernährungsexperte für Kleinkinder. Analysiere dieses Foto einer Mahlzeit.
-${childAllergies}
-
-Erkenne:
-1. Was ist auf dem Teller? Gib einen kurzen deutschen Titel.
-2. Liste alle erkennbaren Zutaten auf.
-3. Schätze die Nährwerte (für eine Kinderportion).
-4. Prüfe auf häufige Allergene (Milch, Ei, Gluten, Nüsse, Soja, Fisch, Schalentiere).
-
-Antworte NUR mit diesem JSON-Format, ohne Markdown:
-{
-  "title": "Bezeichnung der Mahlzeit",
-  "ingredients": ["Zutat1", "Zutat2"],
-  "calories": 0,
-  "protein": 0,
-  "carbs": 0,
-  "fat": 0,
-  "summary": "Kurze Bewertung der Mahlzeit (1 Satz)",
-  "allergens": ["nur wenn Allergene erkannt wurden"]
-}`;
-
     try {
-      const response = await analyzeImageWithGemini(base64Image, prompt);
-      const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-      const parsed = JSON.parse(cleaned);
+      const verified = await runMealVerification(base64Image);
+      const parsed = verified.corrected || verified.analysis;
 
       setAnalysis({
         title: parsed.title || 'Mahlzeit',
@@ -82,12 +76,16 @@ Antworte NUR mit diesem JSON-Format, ohne Markdown:
         fat: parsed.fat || 0,
         summary: parsed.summary || '',
         allergens: parsed.allergens || [],
+        confidence: verified.confidence ?? null,
+        flags: verified.flags || [],
+        original: verified.analysis || null,
+        openFoodFacts: verified.openFoodFacts || null,
       });
       setTitle(parsed.title || 'Mahlzeit');
       setIsAnalyzing(false);
       setStep('review');
     } catch (err) {
-      console.error('Gemini analysis failed:', err);
+      console.error('Meal verification failed:', err);
       setIsAnalyzing(false);
       setAnalyzeError(err.message);
       setStep('capture');
@@ -108,6 +106,10 @@ Antworte NUR mit diesem JSON-Format, ohne Markdown:
       carbs: analysis?.carbs,
       fat: analysis?.fat,
       allergens: analysis?.allergens || [],
+      aiConfidence: analysis?.confidence ?? null,
+      aiFlags: analysis?.flags || [],
+      aiOriginal: analysis?.original || null,
+      aiOpenFoodFacts: analysis?.openFoodFacts || null,
       notes,
     };
     dispatch({ type: 'ADD_MEAL', payload: meal });
@@ -214,6 +216,52 @@ Antworte NUR mit diesem JSON-Format, ohne Markdown:
             <Sparkles className="w-3.5 h-3.5 text-sage-600" />
             <span className="text-xs font-medium text-sage-700">KI-Analyse abgeschlossen</span>
           </div>
+
+          {(analysis.confidence != null || analysis.flags?.length > 0) && (
+            <div className="bg-white border border-sage-200 rounded-xl p-4">
+              {analysis.confidence != null && (
+                <p className="text-sm text-gray-700 mb-2">
+                  Gegencheck-Vertrauen: <span className="font-semibold">{analysis.confidence}%</span>
+                </p>
+              )}
+              {analysis.openFoodFacts && (
+                <p className="text-xs text-gray-500 mb-2">
+                  OpenFoodFacts Treffer: {analysis.openFoodFacts.sampleSize || 0}
+                </p>
+              )}
+              {analysis.flags?.length > 0 && (
+                <div className="space-y-1.5">
+                  {analysis.flags.map((flag, i) => (
+                    <div key={i} className="flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-warm-600 shrink-0 mt-0.5" />
+                      <p className="text-sm text-gray-600">{flag}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {analysis.openFoodFacts?.referencePer100g && (
+            <div className="bg-white border border-sky-200 rounded-xl p-4">
+              <p className="text-sm font-semibold text-gray-700 mb-2">OpenFoodFacts Referenz (pro 100g)</p>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { label: 'Kalorien', value: analysis.openFoodFacts.referencePer100g.calories, unit: 'kcal' },
+                  { label: 'Protein', value: analysis.openFoodFacts.referencePer100g.protein, unit: 'g' },
+                  { label: 'Kohlenhydrate', value: analysis.openFoodFacts.referencePer100g.carbs, unit: 'g' },
+                  { label: 'Fett', value: analysis.openFoodFacts.referencePer100g.fat, unit: 'g' },
+                ].map((item) => (
+                  <div key={item.label} className="rounded-lg bg-sky-50 px-3 py-2">
+                    <p className="text-[11px] text-gray-500">{item.label}</p>
+                    <p className="text-sm font-semibold text-gray-700">
+                      {item.value != null ? Math.round(item.value) : '-'} {item.value != null ? item.unit : ''}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Title */}
           <div>
