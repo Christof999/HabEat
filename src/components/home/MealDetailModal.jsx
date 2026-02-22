@@ -1,4 +1,4 @@
-import { X, Clock, Flame, Droplets, Wheat, Beef } from 'lucide-react';
+import { X, Clock, Flame, Droplets, Wheat, Beef, Baby } from 'lucide-react';
 
 function portionFactor(meal) {
   if (meal.portionEaten === 'half') return 0.5;
@@ -19,6 +19,7 @@ export default function MealDetailModal({ meal, onClose }) {
     month: 'long',
   });
 
+  const mealType = meal.mealType || 'food';
   const factor = portionFactor(meal);
   const adjust = (v) => v != null ? Math.round(v * factor) : v;
 
@@ -42,9 +43,22 @@ export default function MealDetailModal({ meal, onClose }) {
         </button>
 
         {/* Image */}
-        {meal.imageUrl && (
+        {mealType === 'food' && meal.imageUrl && (
           <div className="w-full h-56 overflow-hidden rounded-t-3xl sm:rounded-t-3xl">
             <img src={meal.imageUrl} alt={meal.title} className="w-full h-full object-cover" />
+          </div>
+        )}
+
+        {/* Breastfeeding / Formula icon header */}
+        {mealType !== 'food' && (
+          <div className="flex justify-center pt-6">
+            <div className={`w-16 h-16 rounded-full flex items-center justify-center ${
+              mealType === 'breastfeeding' ? 'bg-rose-50' : 'bg-warm-50'
+            }`}>
+              {mealType === 'breastfeeding'
+                ? <Baby className="w-8 h-8 text-rose-500" />
+                : <Droplets className="w-8 h-8 text-warm-600" />}
+            </div>
           </div>
         )}
 
@@ -58,22 +72,56 @@ export default function MealDetailModal({ meal, onClose }) {
             </div>
           </div>
 
-          {/* Nutrients Grid */}
-          <div className="grid grid-cols-2 gap-3">
-            {nutrients.map(n => (
-              n.value != null && (
-                <div key={n.label} className="bg-gray-50 rounded-xl p-3">
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <n.icon className={`w-3.5 h-3.5 ${n.color}`} />
-                    <span className="text-xs text-gray-500">{n.label}</span>
-                  </div>
-                  <span className="text-lg font-bold text-gray-800">
-                    {n.value} <span className="text-sm font-normal text-gray-400">{n.unit}</span>
-                  </span>
+          {/* Breastfeeding details */}
+          {mealType === 'breastfeeding' && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-rose-50 rounded-xl p-3">
+                <span className="text-xs text-gray-500">Dauer</span>
+                <p className="text-lg font-bold text-gray-800 mt-0.5">{meal.duration} <span className="text-sm font-normal text-gray-400">Min.</span></p>
+              </div>
+              {meal.side && (
+                <div className="bg-rose-50 rounded-xl p-3">
+                  <span className="text-xs text-gray-500">Seite</span>
+                  <p className="text-lg font-bold text-gray-800 mt-0.5">{{ left: 'Links', right: 'Rechts', both: 'Beide' }[meal.side]}</p>
                 </div>
-              )
-            ))}
-          </div>
+              )}
+            </div>
+          )}
+
+          {/* Formula details */}
+          {mealType === 'formula' && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-warm-50 rounded-xl p-3">
+                <span className="text-xs text-gray-500">Menge</span>
+                <p className="text-lg font-bold text-gray-800 mt-0.5">{meal.amount} <span className="text-sm font-normal text-gray-400">ml</span></p>
+              </div>
+              {meal.brand && (
+                <div className="bg-warm-50 rounded-xl p-3">
+                  <span className="text-xs text-gray-500">Marke</span>
+                  <p className="text-lg font-bold text-gray-800 mt-0.5">{meal.brand}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Nutrients Grid — food only */}
+          {mealType === 'food' && (
+            <div className="grid grid-cols-2 gap-3">
+              {nutrients.map(n => (
+                n.value != null && (
+                  <div key={n.label} className="bg-gray-50 rounded-xl p-3">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <n.icon className={`w-3.5 h-3.5 ${n.color}`} />
+                      <span className="text-xs text-gray-500">{n.label}</span>
+                    </div>
+                    <span className="text-lg font-bold text-gray-800">
+                      {n.value} <span className="text-sm font-normal text-gray-400">{n.unit}</span>
+                    </span>
+                  </div>
+                )
+              ))}
+            </div>
+          )}
 
           {/* Ingredients */}
           {meal.ingredients && meal.ingredients.length > 0 && (

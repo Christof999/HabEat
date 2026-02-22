@@ -1,9 +1,14 @@
 import { useState, useRef } from 'react';
-import { ArrowRight, ArrowLeft, Plus, X, User, Calendar, Ruler, Weight, AlertTriangle, Camera } from 'lucide-react';
+import { ArrowRight, ArrowLeft, Plus, X, User, Calendar, Ruler, Weight, AlertTriangle, Camera, Heart } from 'lucide-react';
 
 const commonAllergens = [
   'Milch', 'Ei', 'Erdnuss', 'Baumnüsse', 'Weizen', 'Soja',
   'Fisch', 'Schalentiere', 'Sesam', 'Senf', 'Sellerie', 'Lupine',
+];
+
+const commonConditions = [
+  'Diabetes', 'Neurodermitis', 'Asthma', 'Zöliakie',
+  'Laktoseintoleranz', 'Fruktoseintoleranz', 'Reflux', 'Mukoviszidose',
 ];
 
 const avatarColors = [
@@ -18,10 +23,12 @@ export default function AddChildForm({ onAdd, onBack, childIndex = 0 }) {
     height: '',
     weight: '',
     knownAllergies: [],
+    knownConditions: [],
     avatarColor: avatarColors[childIndex % avatarColors.length],
     photoUrl: null,
   });
   const [customAllergen, setCustomAllergen] = useState('');
+  const [customCondition, setCustomCondition] = useState('');
   const [errors, setErrors] = useState({});
   const photoInputRef = useRef(null);
 
@@ -57,6 +64,26 @@ export default function AddChildForm({ onAdd, onBack, childIndex = 0 }) {
         knownAllergies: [...prev.knownAllergies, trimmed],
       }));
       setCustomAllergen('');
+    }
+  };
+
+  const toggleCondition = (condition) => {
+    setForm(prev => ({
+      ...prev,
+      knownConditions: prev.knownConditions.includes(condition)
+        ? prev.knownConditions.filter(c => c !== condition)
+        : [...prev.knownConditions, condition],
+    }));
+  };
+
+  const addCustomCondition = () => {
+    const trimmed = customCondition.trim();
+    if (trimmed && !form.knownConditions.includes(trimmed)) {
+      setForm(prev => ({
+        ...prev,
+        knownConditions: [...prev.knownConditions, trimmed],
+      }));
+      setCustomCondition('');
     }
   };
 
@@ -280,6 +307,70 @@ export default function AddChildForm({ onAdd, onBack, childIndex = 0 }) {
                     <button
                       type="button"
                       onClick={() => toggleAllergen(allergen)}
+                      className="cursor-pointer"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+            </div>
+          )}
+        </div>
+
+        {/* Known Conditions */}
+        <div>
+          <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-3">
+            <Heart className="w-4 h-4" />
+            Bekannte Vorerkrankungen
+          </label>
+          <div className="flex flex-wrap gap-2 mb-3">
+            {commonConditions.map(condition => (
+              <button
+                key={condition}
+                type="button"
+                onClick={() => toggleCondition(condition)}
+                className={`px-3 py-1.5 rounded-full text-sm font-medium transition cursor-pointer ${
+                  form.knownConditions.includes(condition)
+                    ? 'bg-sky-100 text-sky-700 ring-1 ring-sky-300'
+                    : 'bg-white text-gray-600 border border-gray-200 hover:border-sage-300'
+                }`}
+              >
+                {condition}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={customCondition}
+              onChange={e => setCustomCondition(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addCustomCondition())}
+              placeholder="Weitere Vorerkrankung hinzufügen..."
+              className="flex-1 px-4 py-2.5 rounded-xl bg-white border border-sage-200 focus:outline-none focus:ring-2 focus:ring-sage-300 transition text-sm text-gray-800 placeholder:text-gray-400"
+            />
+            <button
+              type="button"
+              onClick={addCustomCondition}
+              className="w-10 h-10 rounded-xl bg-sage-100 flex items-center justify-center cursor-pointer hover:bg-sage-200 transition"
+            >
+              <Plus className="w-4 h-4 text-sage-700" />
+            </button>
+          </div>
+
+          {form.knownConditions.filter(c => !commonConditions.includes(c)).length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-2">
+              {form.knownConditions
+                .filter(c => !commonConditions.includes(c))
+                .map(condition => (
+                  <span
+                    key={condition}
+                    className="px-3 py-1.5 rounded-full text-sm font-medium bg-sky-100 text-sky-700 ring-1 ring-sky-300 flex items-center gap-1"
+                  >
+                    {condition}
+                    <button
+                      type="button"
+                      onClick={() => toggleCondition(condition)}
                       className="cursor-pointer"
                     >
                       <X className="w-3 h-3" />

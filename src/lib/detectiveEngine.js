@@ -12,8 +12,10 @@ const NO_SYMPTOM_PENALTY = -3;
  * Jede Zutat bekommt einen Score basierend auf zeitlicher Nähe.
  */
 export function analyzeCorrelations(meals, symptoms) {
-  if (!meals.length || !symptoms.length) {
-    return { suspects: [], insights: [], hasData: false };
+  // Only analyze food meals (exclude breastfeeding/formula — no allergy potential)
+  const foodMeals = meals.filter(m => !m.mealType || m.mealType === 'food');
+  if (!foodMeals.length || !symptoms.length) {
+    return { suspects: [], insights: [], hasData: meals.length > 0 && symptoms.length > 0 };
   }
 
   const ingredientStats = {};
@@ -21,7 +23,7 @@ export function analyzeCorrelations(meals, symptoms) {
   // For each symptom, check meals in the 24h window before
   symptoms.forEach(symptom => {
     const symptomTime = new Date(symptom.timestamp).getTime();
-    const mealsInWindow = meals.filter(meal => {
+    const mealsInWindow = foodMeals.filter(meal => {
       const mealTime = new Date(meal.timestamp).getTime();
       const diff = symptomTime - mealTime;
       return diff > 0 && diff <= DELAYED_WINDOW_MS;
@@ -65,7 +67,7 @@ export function analyzeCorrelations(meals, symptoms) {
   });
 
   // Count total appearances of each ingredient (including meals without symptoms)
-  meals.forEach(meal => {
+  foodMeals.forEach(meal => {
     if (!meal.ingredients) return;
     meal.ingredients.forEach(ingredient => {
       const key = ingredient.toLowerCase().trim();
@@ -107,7 +109,7 @@ export function analyzeCorrelations(meals, symptoms) {
     }));
 
   // Generate insights
-  const insights = generateInsights(suspects, symptoms, meals);
+  const insights = generateInsights(suspects, symptoms, foodMeals);
 
   return { suspects, insights, hasData: true };
 }
@@ -174,15 +176,25 @@ function getSymptomLabel(type) {
 /**
  * Schickt die Daten an Gemini für eine intelligente Analyse.
  */
-export async function analyzeWithAI(meals, symptoms, childName) {
+export async function analyzeWithAI(meals, symptoms, childName, { knownAllergies, knownConditions } = {}) {
   const last3Days = 3 * 24 * 60 * 60 * 1000;
   const recentMeals = meals
     .filter(m => Date.now() - new Date(m.timestamp).getTime() <= last3Days)
-    .map(m => ({
-      time: new Date(m.timestamp).toLocaleString('de-DE'),
-      title: m.title,
-      ingredients: m.ingredients?.join(', ') || 'unbekannt',
-    }));
+    .map(m => {
+      const mealType = m.mealType || 'food';
+      if (mealType === 'breastfeeding') {
+        return { time: new Date(m.timestamp).toLocaleString('de-DE'), title: 'Stillen', type: 'breastfeeding', duration: `${m.duration} Min.` };
+      }
+      if (mealType === 'formula') {
+        return { time: new Date(m.timestamp).toLocaleString('de-DE'), title: m.title, type: 'formula', amount: `${m.amount} ml` };
+      }
+      return {
+        time: new Date(m.timestamp).toLocaleString('de-DE'),
+        title: m.title,
+        type: 'food',
+        ingredients: m.ingredients?.join(', ') || 'unbekannt',
+      };
+    });
 
   const recentSymptoms = symptoms
     .filter(s => Date.now() - new Date(s.timestamp).getTime() <= last3Days)
@@ -197,7 +209,15 @@ export async function analyzeWithAI(meals, symptoms, childName) {
     return null;
   }
 
+  const allergyInfo = knownAllergies?.length > 0
+    ? `\nBekannte Allergien/Unverträglichkeiten: ${knownAllergies.join(', ')}.`
+    : '';
+  const conditionInfo = knownConditions?.length > 0
+    ? `\nBekannte Vorerkrankungen: ${knownConditions.join(', ')}. Berücksichtige diese bei der Analyse (z.B. bei Diabetes auf Zucker/Kohlenhydrate achten, bei Zöliakie auf Gluten, bei Reflux auf säurehaltige Lebensmittel).`
+    : '';
+
   const prompt = `Du bist ein Ernährungsberater-Assistent für Kleinkinder. Analysiere die folgenden Daten für das Kind "${childName}".
+${allergyInfo}${conditionInfo}
 
 WICHTIG: Du bist KEIN Arzt. Gib keine Diagnosen ab. Formuliere vorsichtige Vermutungen.
 

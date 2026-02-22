@@ -53,7 +53,10 @@ export default function DetectivePage() {
     setAiLoading(true);
     setAiError(null);
     try {
-      const result = await analyzeWithAI(childMeals, childSymptoms, activeChild.name);
+      const result = await analyzeWithAI(childMeals, childSymptoms, activeChild.name, {
+        knownAllergies: activeChild.knownAllergies,
+        knownConditions: activeChild.knownConditions,
+      });
       setAiAnalysis(result);
     } catch (err) {
       setAiError(err.message);

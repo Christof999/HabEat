@@ -5,6 +5,8 @@ import { useApp } from '../contexts/AppContext';
 const VALID_USERS = [
   { username: 'Daniela', password: 'Admin' },
   { username: 'Peter', password: 'Admin' },
+  { username: 'Svenja', password: 'admin' },
+  { username: 'Felix', password: 'admin' },
   { username: 'Teste', password: 'admin' },
 ];
 

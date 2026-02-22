@@ -339,6 +339,15 @@ export default function MyChildPage() {
                   ))}
                 </div>
               )}
+              {child.knownConditions?.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {child.knownConditions.map(c => (
+                    <span key={c} className="px-2 py-0.5 rounded-full bg-sky-50 text-sky-600 text-[10px] font-medium">
+                      {c}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

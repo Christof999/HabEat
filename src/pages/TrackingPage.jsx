@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Camera, Image, Sparkles, Loader2, MapPin, StickyNote, Check, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Camera, Image, Sparkles, Loader2, MapPin, StickyNote, Check, AlertCircle, Baby, Clock, Droplets } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import { analyzeImageWithGemini } from '../lib/gemini';
 
@@ -9,13 +9,21 @@ export default function TrackingPage() {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
 
-  const [step, setStep] = useState('capture'); // capture, analyzing, review
+  const [step, setStep] = useState('capture'); // capture, analyzing, review, breastfeeding, formula
   const [imagePreview, setImagePreview] = useState(null);
   const [analysis, setAnalysis] = useState(null);
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState(null);
+
+  // Breastfeeding state
+  const [bfDuration, setBfDuration] = useState('');
+  const [bfSide, setBfSide] = useState(null); // 'left', 'right', 'both'
+
+  // Formula state
+  const [formulaAmount, setFormulaAmount] = useState('');
+  const [formulaBrand, setFormulaBrand] = useState('');
 
   const handleCapture = (source) => {
     if (source === 'camera') {
@@ -46,9 +54,12 @@ export default function TrackingPage() {
     const childAllergies = activeChild?.knownAllergies?.length > 0
       ? `Das Kind hat bekannte Allergien/Unverträglichkeiten: ${activeChild.knownAllergies.join(', ')}.`
       : '';
+    const childConditions = activeChild?.knownConditions?.length > 0
+      ? ` Das Kind hat folgende Vorerkrankungen: ${activeChild.knownConditions.join(', ')}. Berücksichtige dies bei der Bewertung (z.B. bei Diabetes auf Zucker achten).`
+      : '';
 
     const prompt = `Du bist ein Ernährungsexperte für Kleinkinder. Analysiere dieses Foto einer Mahlzeit.
-${childAllergies}
+${childAllergies}${childConditions}
 
 Erkenne:
 1. Was ist auf dem Teller? Gib einen kurzen deutschen Titel.
@@ -99,6 +110,7 @@ Antworte NUR mit diesem JSON-Format, ohne Markdown:
       id: crypto.randomUUID(),
       childId: state.activeChildId,
       timestamp: new Date().toISOString(),
+      mealType: 'food',
       imageUrl: imagePreview,
       title: title || analysis?.title || 'Mahlzeit',
       summary: analysis?.summary || '',
@@ -108,6 +120,40 @@ Antworte NUR mit diesem JSON-Format, ohne Markdown:
       carbs: analysis?.carbs,
       fat: analysis?.fat,
       allergens: analysis?.allergens || [],
+      notes,
+    };
+    dispatch({ type: 'ADD_MEAL', payload: meal });
+    navigate('/');
+  };
+
+  const handleSaveBreastfeeding = () => {
+    const duration = bfDuration ? parseInt(bfDuration, 10) : null;
+    if (!duration) return;
+    const meal = {
+      id: crypto.randomUUID(),
+      childId: state.activeChildId,
+      timestamp: new Date().toISOString(),
+      mealType: 'breastfeeding',
+      title: 'Stillen',
+      duration,
+      side: bfSide,
+      notes,
+    };
+    dispatch({ type: 'ADD_MEAL', payload: meal });
+    navigate('/');
+  };
+
+  const handleSaveFormula = () => {
+    const amount = formulaAmount ? parseInt(formulaAmount, 10) : null;
+    if (!amount) return;
+    const meal = {
+      id: crypto.randomUUID(),
+      childId: state.activeChildId,
+      timestamp: new Date().toISOString(),
+      mealType: 'formula',
+      title: formulaBrand ? `Pre-Nahrung (${formulaBrand})` : 'Pre-Nahrung',
+      amount,
+      brand: formulaBrand || null,
       notes,
     };
     dispatch({ type: 'ADD_MEAL', payload: meal });
@@ -172,6 +218,38 @@ Antworte NUR mit diesem JSON-Format, ohne Markdown:
             <div className="text-left">
               <h3 className="font-semibold text-gray-800">Galerie</h3>
               <p className="text-sm text-gray-500">Ein vorhandenes Foto auswählen</p>
+            </div>
+          </button>
+
+          <div className="relative flex items-center py-2">
+            <div className="flex-1 border-t border-gray-200" />
+            <span className="px-3 text-xs text-gray-400">Säuglingsernährung</span>
+            <div className="flex-1 border-t border-gray-200" />
+          </div>
+
+          <button
+            onClick={() => setStep('breastfeeding')}
+            className="w-full bg-white rounded-2xl p-6 shadow-sm flex items-center gap-4 hover:shadow-md transition cursor-pointer"
+          >
+            <div className="w-14 h-14 rounded-xl bg-rose-50 flex items-center justify-center">
+              <Baby className="w-6 h-6 text-rose-500" />
+            </div>
+            <div className="text-left">
+              <h3 className="font-semibold text-gray-800">Stillen</h3>
+              <p className="text-sm text-gray-500">Stillzeit und Seite erfassen</p>
+            </div>
+          </button>
+
+          <button
+            onClick={() => setStep('formula')}
+            className="w-full bg-white rounded-2xl p-6 shadow-sm flex items-center gap-4 hover:shadow-md transition cursor-pointer"
+          >
+            <div className="w-14 h-14 rounded-xl bg-warm-50 flex items-center justify-center">
+              <Droplets className="w-6 h-6 text-warm-600" />
+            </div>
+            <div className="text-left">
+              <h3 className="font-semibold text-gray-800">Pre-Nahrung</h3>
+              <p className="text-sm text-gray-500">Fläschchen mit Menge erfassen</p>
             </div>
           </button>
         </div>
@@ -304,6 +382,163 @@ Antworte NUR mit diesem JSON-Format, ohne Markdown:
               <Check className="w-5 h-5" />
               Mahlzeit speichern
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Step: Breastfeeding */}
+      {step === 'breastfeeding' && (
+        <div className="px-6 pb-32 space-y-5">
+          <div className="flex flex-col items-center gap-3 py-4">
+            <div className="w-16 h-16 rounded-full bg-rose-50 flex items-center justify-center">
+              <Baby className="w-8 h-8 text-rose-500" />
+            </div>
+            <h3 className="font-bold text-lg text-gray-800">Stillen erfassen</h3>
+          </div>
+
+          {/* Duration */}
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+              <Clock className="w-4 h-4" /> Dauer (Minuten)
+            </label>
+            <input
+              type="number"
+              value={bfDuration}
+              onChange={e => setBfDuration(e.target.value)}
+              placeholder="z.B. 15"
+              className="w-full px-4 py-3 rounded-xl bg-white border border-sage-200 focus:outline-none focus:ring-2 focus:ring-sage-300 transition text-gray-800 placeholder:text-gray-400"
+            />
+          </div>
+
+          {/* Side */}
+          <div>
+            <label className="text-sm font-medium text-gray-700 mb-2 block">Seite (optional)</label>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { value: 'left', label: 'Links' },
+                { value: 'right', label: 'Rechts' },
+                { value: 'both', label: 'Beide' },
+              ].map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setBfSide(bfSide === opt.value ? null : opt.value)}
+                  className={`py-3 rounded-xl text-sm font-medium transition cursor-pointer ${
+                    bfSide === opt.value
+                      ? 'bg-rose-100 text-rose-700 ring-1 ring-rose-300'
+                      : 'bg-white text-gray-600 border border-gray-200'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+              <StickyNote className="w-4 h-4" /> Notizen (optional)
+            </label>
+            <textarea
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              rows={2}
+              placeholder="z.B. Gut getrunken, ruhig..."
+              className="w-full px-4 py-3 rounded-xl bg-white border border-sage-200 focus:outline-none focus:ring-2 focus:ring-sage-300 transition text-gray-800 placeholder:text-gray-400 resize-none"
+            />
+          </div>
+
+          {/* Actions */}
+          <div className="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-warm-50 via-warm-50 to-transparent safe-bottom">
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setStep('capture'); setNotes(''); setBfDuration(''); setBfSide(null); }}
+                className="flex-1 py-4 rounded-2xl text-sm font-medium bg-gray-100 text-gray-600 cursor-pointer"
+              >
+                Abbrechen
+              </button>
+              <button
+                onClick={handleSaveBreastfeeding}
+                disabled={!bfDuration}
+                className="flex-2 py-4 px-6 rounded-2xl text-sm font-semibold bg-sage-500 hover:bg-sage-600 text-white cursor-pointer disabled:opacity-40 flex items-center justify-center gap-2 transition-colors"
+              >
+                <Check className="w-5 h-5" />
+                Speichern
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Step: Formula */}
+      {step === 'formula' && (
+        <div className="px-6 pb-32 space-y-5">
+          <div className="flex flex-col items-center gap-3 py-4">
+            <div className="w-16 h-16 rounded-full bg-warm-50 flex items-center justify-center">
+              <Droplets className="w-8 h-8 text-warm-600" />
+            </div>
+            <h3 className="font-bold text-lg text-gray-800">Pre-Nahrung erfassen</h3>
+          </div>
+
+          {/* Amount */}
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+              <Droplets className="w-4 h-4" /> Menge (ml)
+            </label>
+            <input
+              type="number"
+              value={formulaAmount}
+              onChange={e => setFormulaAmount(e.target.value)}
+              placeholder="z.B. 150"
+              className="w-full px-4 py-3 rounded-xl bg-white border border-sage-200 focus:outline-none focus:ring-2 focus:ring-sage-300 transition text-gray-800 placeholder:text-gray-400"
+            />
+          </div>
+
+          {/* Brand (optional) */}
+          <div>
+            <label className="text-sm font-medium text-gray-700 mb-2 block">Marke (optional)</label>
+            <input
+              type="text"
+              value={formulaBrand}
+              onChange={e => setFormulaBrand(e.target.value)}
+              placeholder="z.B. Aptamil, Hipp..."
+              className="w-full px-4 py-3 rounded-xl bg-white border border-sage-200 focus:outline-none focus:ring-2 focus:ring-sage-300 transition text-gray-800 placeholder:text-gray-400"
+            />
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+              <StickyNote className="w-4 h-4" /> Notizen (optional)
+            </label>
+            <textarea
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              rows={2}
+              placeholder="z.B. Gut getrunken, Temperatur ok..."
+              className="w-full px-4 py-3 rounded-xl bg-white border border-sage-200 focus:outline-none focus:ring-2 focus:ring-sage-300 transition text-gray-800 placeholder:text-gray-400 resize-none"
+            />
+          </div>
+
+          {/* Actions */}
+          <div className="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-warm-50 via-warm-50 to-transparent safe-bottom">
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setStep('capture'); setNotes(''); setFormulaAmount(''); setFormulaBrand(''); }}
+                className="flex-1 py-4 rounded-2xl text-sm font-medium bg-gray-100 text-gray-600 cursor-pointer"
+              >
+                Abbrechen
+              </button>
+              <button
+                onClick={handleSaveFormula}
+                disabled={!formulaAmount}
+                className="flex-2 py-4 px-6 rounded-2xl text-sm font-semibold bg-sage-500 hover:bg-sage-600 text-white cursor-pointer disabled:opacity-40 flex items-center justify-center gap-2 transition-colors"
+              >
+                <Check className="w-5 h-5" />
+                Speichern
+              </button>
+            </div>
           </div>
         </div>
       )}
