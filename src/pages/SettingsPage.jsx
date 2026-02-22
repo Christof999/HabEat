@@ -21,7 +21,7 @@ export default function SettingsPage() {
         ...state.children.map(child => ({
           icon: Baby,
           label: child.name,
-          sublabel: `${child.knownAllergies.length} Allergien`,
+          sublabel: `${(child.knownAllergies || child.allergies || []).length} Allergien`,
           action: () => {},
           avatarColor: child.avatarColor,
         })),

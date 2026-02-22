@@ -18,10 +18,28 @@ const initialState = {
   firestoreReady: false,
 };
 
+function normalizeChild(child) {
+  const knownAllergies = Array.isArray(child?.knownAllergies)
+    ? child.knownAllergies
+    : Array.isArray(child?.allergies)
+      ? child.allergies
+      : [];
+
+  return {
+    ...child,
+    knownAllergies,
+    allergies: knownAllergies,
+  };
+}
+
 function appReducer(state, action) {
   switch (action.type) {
     case 'SET_LOGGED_IN':
-      return { ...state, loggedIn: true, currentUser: action.payload.username };
+      return {
+        ...initialState,
+        loggedIn: true,
+        currentUser: action.payload.username,
+      };
 
     case 'LOGOUT':
       return { ...initialState };
@@ -32,7 +50,7 @@ function appReducer(state, action) {
     case 'ADD_CHILD':
       return {
         ...state,
-        children: [...state.children, action.payload],
+        children: [...state.children, normalizeChild(action.payload)],
         activeChildId: state.activeChildId || action.payload.id,
       };
 
@@ -40,7 +58,7 @@ function appReducer(state, action) {
       return {
         ...state,
         children: state.children.map(c =>
-          c.id === action.payload.id ? { ...c, ...action.payload } : c
+          c.id === action.payload.id ? normalizeChild({ ...c, ...action.payload }) : c
         ),
       };
 
@@ -86,7 +104,13 @@ function appReducer(state, action) {
       };
 
     case 'LOAD_STATE':
-      return { ...state, ...action.payload };
+      return {
+        ...state,
+        ...action.payload,
+        children: Array.isArray(action.payload?.children)
+          ? action.payload.children.map(normalizeChild)
+          : state.children,
+      };
 
     case 'SYNC_FIRESTORE':
       return { ...state, ...action.payload, firestoreReady: true };
@@ -176,7 +200,10 @@ export function AppProvider({ children: reactChildren }) {
           });
           break;
         case 'children':
-          rawDispatch({ type: 'SYNC_FIRESTORE', payload: { children: data } });
+          rawDispatch({
+            type: 'SYNC_FIRESTORE',
+            payload: { children: Array.isArray(data) ? data.map(normalizeChild) : [] },
+          });
           break;
         case 'meals':
           rawDispatch({ type: 'SYNC_FIRESTORE', payload: { meals: data } });

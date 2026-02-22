@@ -5,6 +5,7 @@ import { useApp } from '../contexts/AppContext';
 export default function EmergencyPage() {
   const { activeChild, state } = useApp();
   const [copied, setCopied] = useState(false);
+  const childAllergies = activeChild?.knownAllergies || activeChild?.allergies || [];
 
   const handleCopy = () => {
     if (!activeChild) return;
@@ -12,8 +13,8 @@ export default function EmergencyPage() {
       `ALLERGIE-NOTFALLKARTE`,
       `Name: ${activeChild.name}`,
       `Geburtsdatum: ${new Date(activeChild.birthDate).toLocaleDateString('de-DE')}`,
-      activeChild.knownAllergies.length > 0
-        ? `Allergien: ${activeChild.knownAllergies.join(', ')}`
+      childAllergies.length > 0
+        ? `Allergien: ${childAllergies.join(', ')}`
         : 'Keine bekannten Allergien',
     ].join('\n');
 
@@ -75,9 +76,9 @@ export default function EmergencyPage() {
               <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
                 Bekannte Allergien
               </h4>
-              {activeChild.knownAllergies.length > 0 ? (
+              {childAllergies.length > 0 ? (
                 <div className="flex flex-wrap gap-2">
-                  {activeChild.knownAllergies.map(a => (
+                  {childAllergies.map(a => (
                     <span
                       key={a}
                       className="px-3 py-1.5 rounded-full text-sm font-semibold bg-rose-100 text-rose-700 flex items-center gap-1.5"
