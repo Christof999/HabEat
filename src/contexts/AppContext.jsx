@@ -133,8 +133,14 @@ function appReducer(state, action) {
     case 'LOAD_STATE':
       return { ...state, ...action.payload };
 
-    case 'SYNC_FIRESTORE':
-      return { ...state, ...action.payload, firestoreReady: true };
+    case 'SYNC_FIRESTORE': {
+      const synced = { ...state, ...action.payload, firestoreReady: true };
+      // Defensive: ensure arrays are never replaced with non-arrays
+      if (!Array.isArray(synced.meals)) synced.meals = state.meals || [];
+      if (!Array.isArray(synced.children)) synced.children = state.children || [];
+      if (!Array.isArray(synced.symptoms)) synced.symptoms = state.symptoms || [];
+      return synced;
+    }
 
     case 'RESET':
       return initialState;
@@ -339,6 +345,7 @@ export function AppProvider({ children: reactChildren }) {
         case 'meals':
           if (data.length === 0 && current.meals.length > 0) return;
           // Preserve local imageUrl (not stored in Firestore, base64 too large)
+          const firestoreMealIds = new Set(data.map(m => m.id));
           const mergedMeals = data.map(fsMeal => {
             const localMeal = current.meals.find(m => m.id === fsMeal.id);
             return {
@@ -347,7 +354,15 @@ export function AppProvider({ children: reactChildren }) {
               afterImageUrl: localMeal?.afterImageUrl || null,
             };
           });
-          rawDispatch({ type: 'SYNC_FIRESTORE', payload: { meals: mergedMeals } });
+          // Preserve local-only meals not yet synced to Firestore
+          // (race condition: ADD_MEAL dispatch may not be reflected yet)
+          const localOnlyMeals = current.meals.filter(
+            m => m && m.id && !firestoreMealIds.has(m.id)
+          );
+          rawDispatch({
+            type: 'SYNC_FIRESTORE',
+            payload: { meals: [...localOnlyMeals, ...mergedMeals] },
+          });
           break;
         case 'symptoms':
           if (data.length === 0 && current.symptoms.length > 0) return;

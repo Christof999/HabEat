@@ -10,12 +10,15 @@ import MealDetailModal from '../components/home/MealDetailModal';
 export default function HomePage() {
   const { state, activeChild } = useApp();
   const navigate = useNavigate();
-  const [selectedMeal, setSelectedMeal] = useState(null);
+  const [selectedMealId, setSelectedMealId] = useState(null);
 
   const today = new Date().toDateString();
   const todayMeals = state.meals.filter(
     m => m.childId === state.activeChildId && new Date(m.timestamp).toDateString() === today
   );
+
+  // Always read current meal data from state so edits are reflected
+  const selectedMeal = selectedMealId ? state.meals.find(m => m.id === selectedMealId) : null;
 
   const greeting = () => {
     const hour = new Date().getHours();
@@ -52,7 +55,7 @@ export default function HomePage() {
       <div className="px-6 space-y-3">
         {todayMeals.length > 0 ? (
           todayMeals.map(meal => (
-            <MealCard key={meal.id} meal={meal} onClick={() => setSelectedMeal(meal)} showPortionPicker />
+            <MealCard key={meal.id} meal={meal} onClick={() => setSelectedMealId(meal.id)} showPortionPicker />
           ))
         ) : (
           <EmptyMeals />
@@ -70,7 +73,7 @@ export default function HomePage() {
 
       {/* Meal Detail Modal */}
       {selectedMeal && (
-        <MealDetailModal meal={selectedMeal} onClose={() => setSelectedMeal(null)} />
+        <MealDetailModal meal={selectedMeal} onClose={() => setSelectedMealId(null)} />
       )}
     </div>
   );

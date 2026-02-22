@@ -1,4 +1,6 @@
-import { X, Clock, Flame, Droplets, Wheat, Beef, Baby } from 'lucide-react';
+import { useState } from 'react';
+import { X, Clock, Flame, Droplets, Wheat, Beef, Baby, Pencil, Check, Database, AlertCircle, Leaf, Cookie } from 'lucide-react';
+import { useApp } from '../../contexts/AppContext';
 
 function portionFactor(meal) {
   if (meal.portionEaten === 'half') return 0.5;
@@ -7,6 +9,17 @@ function portionFactor(meal) {
 }
 
 export default function MealDetailModal({ meal, onClose }) {
+  const { dispatch } = useApp();
+  const [editing, setEditing] = useState(false);
+  const [editValues, setEditValues] = useState({
+    calories: meal.calories ?? '',
+    protein: meal.protein ?? '',
+    carbs: meal.carbs ?? '',
+    fat: meal.fat ?? '',
+    sugar: meal.sugar ?? '',
+    fiber: meal.fiber ?? '',
+  });
+
   if (!meal) return null;
 
   const time = new Date(meal.timestamp).toLocaleTimeString('de-DE', {
@@ -24,11 +37,29 @@ export default function MealDetailModal({ meal, onClose }) {
   const adjust = (v) => v != null ? Math.round(v * factor) : v;
 
   const nutrients = [
-    { icon: Flame, label: 'Kalorien', value: adjust(meal.calories), unit: 'kcal', color: 'text-warm-600' },
-    { icon: Beef, label: 'Protein', value: adjust(meal.protein), unit: 'g', color: 'text-rose-500' },
-    { icon: Wheat, label: 'Kohlenhydrate', value: adjust(meal.carbs), unit: 'g', color: 'text-warm-500' },
-    { icon: Droplets, label: 'Fett', value: adjust(meal.fat), unit: 'g', color: 'text-sky-500' },
+    { icon: Flame, label: 'Kalorien', key: 'calories', value: adjust(meal.calories), unit: 'kcal', color: 'text-warm-600' },
+    { icon: Beef, label: 'Protein', key: 'protein', value: adjust(meal.protein), unit: 'g', color: 'text-rose-500' },
+    { icon: Wheat, label: 'Kohlenhydrate', key: 'carbs', value: adjust(meal.carbs), unit: 'g', color: 'text-warm-500' },
+    { icon: Droplets, label: 'Fett', key: 'fat', value: adjust(meal.fat), unit: 'g', color: 'text-sky-500' },
+    { icon: Cookie, label: 'Zucker', key: 'sugar', value: adjust(meal.sugar), unit: 'g', color: 'text-amber-500' },
+    { icon: Leaf, label: 'Ballaststoffe', key: 'fiber', value: adjust(meal.fiber), unit: 'g', color: 'text-green-500' },
   ];
+
+  const handleSaveEdit = () => {
+    const updates = {
+      id: meal.id,
+      calories: parseFloat(editValues.calories) || 0,
+      protein: parseFloat(editValues.protein) || 0,
+      carbs: parseFloat(editValues.carbs) || 0,
+      fat: parseFloat(editValues.fat) || 0,
+      sugar: parseFloat(editValues.sugar) || null,
+      fiber: parseFloat(editValues.fiber) || null,
+    };
+    dispatch({ type: 'UPDATE_MEAL', payload: updates });
+    setEditing(false);
+  };
+
+  const hasDataSource = meal.dataSource && meal.dataSource !== 'gemini';
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
@@ -72,6 +103,31 @@ export default function MealDetailModal({ meal, onClose }) {
             </div>
           </div>
 
+          {/* Data Source Badges */}
+          {mealType === 'food' && (
+            <div className="flex items-center gap-2 flex-wrap">
+              {meal.dataSource?.includes('openfoodfacts') && (
+                <div className="flex items-center gap-1.5 px-2.5 py-1 bg-orange-50 rounded-full">
+                  <Database className="w-3 h-3 text-orange-500" />
+                  <span className="text-xs text-orange-700">
+                    Open Food Facts{meal.offBrand ? ` (${meal.offBrand})` : ''}
+                  </span>
+                </div>
+              )}
+              {meal.nutriscoreGrade && (
+                <span className={`text-xs font-bold uppercase px-2.5 py-1 rounded-full ${
+                  meal.nutriscoreGrade === 'a' ? 'bg-green-100 text-green-700' :
+                  meal.nutriscoreGrade === 'b' ? 'bg-lime-100 text-lime-700' :
+                  meal.nutriscoreGrade === 'c' ? 'bg-yellow-100 text-yellow-700' :
+                  meal.nutriscoreGrade === 'd' ? 'bg-orange-100 text-orange-700' :
+                  'bg-red-100 text-red-700'
+                }`}>
+                  Nutri-Score {meal.nutriscoreGrade.toUpperCase()}
+                </span>
+              )}
+            </div>
+          )}
+
           {/* Breastfeeding details */}
           {mealType === 'breastfeeding' && (
             <div className="grid grid-cols-2 gap-3">
@@ -106,20 +162,74 @@ export default function MealDetailModal({ meal, onClose }) {
 
           {/* Nutrients Grid — food only */}
           {mealType === 'food' && (
-            <div className="grid grid-cols-2 gap-3">
-              {nutrients.map(n => (
-                n.value != null && (
-                  <div key={n.label} className="bg-gray-50 rounded-xl p-3">
-                    <div className="flex items-center gap-1.5 mb-1">
-                      <n.icon className={`w-3.5 h-3.5 ${n.color}`} />
-                      <span className="text-xs text-gray-500">{n.label}</span>
-                    </div>
-                    <span className="text-lg font-bold text-gray-800">
-                      {n.value} <span className="text-sm font-normal text-gray-400">{n.unit}</span>
-                    </span>
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-gray-700">Nährwerte</h3>
+                {!editing ? (
+                  <button
+                    onClick={() => setEditing(true)}
+                    className="flex items-center gap-1.5 text-xs text-sage-600 hover:text-sage-700 transition cursor-pointer"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    Bearbeiten
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setEditing(false)}
+                      className="text-xs text-gray-500 hover:text-gray-700 transition cursor-pointer"
+                    >
+                      Abbrechen
+                    </button>
+                    <button
+                      onClick={handleSaveEdit}
+                      className="flex items-center gap-1 text-xs text-sage-600 font-semibold hover:text-sage-700 transition cursor-pointer"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      Speichern
+                    </button>
                   </div>
-                )
-              ))}
+                )}
+              </div>
+
+              {!editing ? (
+                <div className="grid grid-cols-2 gap-3">
+                  {nutrients.map(n => (
+                    n.value != null && (
+                      <div key={n.label} className="bg-gray-50 rounded-xl p-3">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <n.icon className={`w-3.5 h-3.5 ${n.color}`} />
+                          <span className="text-xs text-gray-500">{n.label}</span>
+                        </div>
+                        <span className="text-lg font-bold text-gray-800">
+                          {n.value} <span className="text-sm font-normal text-gray-400">{n.unit}</span>
+                        </span>
+                      </div>
+                    )
+                  ))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  {nutrients.map(n => (
+                    <div key={n.label} className="bg-gray-50 rounded-xl p-3">
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <n.icon className={`w-3.5 h-3.5 ${n.color}`} />
+                        <span className="text-xs text-gray-500">{n.label}</span>
+                      </div>
+                      <div className="flex items-baseline gap-1">
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={editValues[n.key]}
+                          onChange={e => setEditValues(prev => ({ ...prev, [n.key]: e.target.value }))}
+                          className="w-full bg-white text-lg font-bold text-gray-800 rounded-lg px-2 py-1 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-sage-300 transition"
+                        />
+                        <span className="text-sm font-normal text-gray-400 shrink-0">{n.unit}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -134,6 +244,23 @@ export default function MealDetailModal({ meal, onClose }) {
                     className="px-3 py-1 rounded-full text-xs font-medium bg-sage-50 text-sage-700"
                   >
                     {ingredient}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Allergens */}
+          {meal.allergens && meal.allergens.length > 0 && (
+            <div className="bg-rose-50 border border-rose-200 rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertCircle className="w-4 h-4 text-rose-500" />
+                <h3 className="text-sm font-semibold text-rose-700">Allergene</h3>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {meal.allergens.map((allergen, i) => (
+                  <span key={i} className="px-2.5 py-1 rounded-full text-xs font-medium bg-rose-100 text-rose-700">
+                    {allergen}
                   </span>
                 ))}
               </div>

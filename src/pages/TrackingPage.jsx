@@ -1,8 +1,34 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Camera, Image, Sparkles, Loader2, MapPin, StickyNote, Check, AlertCircle, Baby, Clock, Droplets } from 'lucide-react';
+import {
+  ArrowLeft, Camera, Image, Sparkles, Loader2, StickyNote, Check,
+  AlertCircle, Baby, Clock, Droplets, Search, Database, Pencil, X,
+} from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import { analyzeImageWithGemini } from '../lib/gemini';
+import { searchProducts } from '../lib/openFoodFacts';
+
+// Keywords in notes that map to allergens (German)
+const ALLERGEN_KEYWORDS = {
+  'nüsse': 'Nüsse', 'nuss': 'Nüsse', 'erdnuss': 'Erdnüsse', 'erdnüsse': 'Erdnüsse',
+  'milch': 'Milch', 'laktose': 'Milch', 'käse': 'Milch', 'sahne': 'Milch', 'butter': 'Milch',
+  'ei': 'Ei', 'eier': 'Ei',
+  'gluten': 'Gluten', 'weizen': 'Gluten', 'dinkel': 'Gluten', 'roggen': 'Gluten',
+  'soja': 'Soja',
+  'fisch': 'Fisch',
+  'schalentier': 'Schalentiere', 'garnele': 'Schalentiere', 'krebs': 'Schalentiere',
+  'sellerie': 'Sellerie', 'senf': 'Senf', 'sesam': 'Sesam', 'lupine': 'Lupine',
+};
+
+function detectAllergensFromText(text) {
+  if (!text) return [];
+  const lower = text.toLowerCase();
+  const found = new Set();
+  for (const [keyword, label] of Object.entries(ALLERGEN_KEYWORDS)) {
+    if (lower.includes(keyword)) found.add(label);
+  }
+  return [...found];
+}
 
 export default function TrackingPage() {
   const { state, dispatch, activeChild } = useApp();
@@ -17,13 +43,42 @@ export default function TrackingPage() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState(null);
 
+  // Editable nutrition state (initialized from analysis/OFF)
+  const [editCalories, setEditCalories] = useState('');
+  const [editProtein, setEditProtein] = useState('');
+  const [editCarbs, setEditCarbs] = useState('');
+  const [editFat, setEditFat] = useState('');
+  const [editSugar, setEditSugar] = useState('');
+  const [editFiber, setEditFiber] = useState('');
+
+  // Allergens (merged from Gemini + OFF + notes)
+  const [allergens, setAllergens] = useState([]);
+
+  // OFF search state
+  const [offQuery, setOffQuery] = useState('');
+  const [offResults, setOffResults] = useState([]);
+  const [offSearching, setOffSearching] = useState(false);
+  const [offProduct, setOffProduct] = useState(null);
+  const [showOffSearch, setShowOffSearch] = useState(false);
+
   // Breastfeeding state
   const [bfDuration, setBfDuration] = useState('');
-  const [bfSide, setBfSide] = useState(null); // 'left', 'right', 'both'
+  const [bfSide, setBfSide] = useState(null);
 
   // Formula state
   const [formulaAmount, setFormulaAmount] = useState('');
   const [formulaBrand, setFormulaBrand] = useState('');
+
+  // Re-analyze allergens when notes change
+  useEffect(() => {
+    const fromNotes = detectAllergensFromText(notes);
+    const baseAllergens = [
+      ...(analysis?.allergens || []),
+      ...(offProduct?.allergens || []),
+    ];
+    const merged = [...new Set([...baseAllergens, ...fromNotes])];
+    setAllergens(merged);
+  }, [notes, analysis, offProduct]);
 
   const handleCapture = (source) => {
     if (source === 'camera') {
@@ -37,7 +92,6 @@ export default function TrackingPage() {
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = (ev) => {
       setImagePreview(ev.target.result);
@@ -66,6 +120,7 @@ Erkenne:
 2. Liste alle erkennbaren Zutaten auf.
 3. Schätze die Nährwerte (für eine Kinderportion).
 4. Prüfe auf häufige Allergene (Milch, Ei, Gluten, Nüsse, Soja, Fisch, Schalentiere).
+5. Schätze auch Zucker und Ballaststoffe wenn möglich.
 
 Antworte NUR mit diesem JSON-Format, ohne Markdown:
 {
@@ -75,6 +130,8 @@ Antworte NUR mit diesem JSON-Format, ohne Markdown:
   "protein": 0,
   "carbs": 0,
   "fat": 0,
+  "sugar": 0,
+  "fiber": 0,
   "summary": "Kurze Bewertung der Mahlzeit (1 Satz)",
   "allergens": ["nur wenn Allergene erkannt wurden"]
 }`;
@@ -84,19 +141,35 @@ Antworte NUR mit diesem JSON-Format, ohne Markdown:
       const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       const parsed = JSON.parse(cleaned);
 
-      setAnalysis({
+      const result = {
         title: parsed.title || 'Mahlzeit',
         ingredients: parsed.ingredients || [],
         calories: parsed.calories || 0,
         protein: parsed.protein || 0,
         carbs: parsed.carbs || 0,
         fat: parsed.fat || 0,
+        sugar: parsed.sugar || 0,
+        fiber: parsed.fiber || 0,
         summary: parsed.summary || '',
         allergens: parsed.allergens || [],
-      });
-      setTitle(parsed.title || 'Mahlzeit');
+      };
+
+      setAnalysis(result);
+      setTitle(result.title);
+      setEditCalories(String(result.calories));
+      setEditProtein(String(result.protein));
+      setEditCarbs(String(result.carbs));
+      setEditFat(String(result.fat));
+      setEditSugar(String(result.sugar || ''));
+      setEditFiber(String(result.fiber || ''));
+      setAllergens(result.allergens);
       setIsAnalyzing(false);
       setStep('review');
+
+      // Auto-search OFF with the recognized title
+      if (result.title && result.title !== 'Mahlzeit') {
+        runOffSearch(result.title);
+      }
     } catch (err) {
       console.error('Gemini analysis failed:', err);
       setIsAnalyzing(false);
@@ -105,6 +178,45 @@ Antworte NUR mit diesem JSON-Format, ohne Markdown:
     }
   };
 
+  // --- Open Food Facts search ---
+  const runOffSearch = async (q) => {
+    if (!q || q.length < 2) return;
+    setOffSearching(true);
+    try {
+      const results = await searchProducts(q, 5);
+      setOffResults(results);
+    } catch (err) {
+      console.error('OFF search failed:', err);
+    } finally {
+      setOffSearching(false);
+    }
+  };
+
+  const handleOffSearchSubmit = (e) => {
+    e.preventDefault();
+    runOffSearch(offQuery);
+    setShowOffSearch(true);
+  };
+
+  const applyOffProduct = (product) => {
+    setOffProduct(product);
+    setShowOffSearch(false);
+
+    // Merge OFF nutrition data — prefer OFF values if available
+    const n = product.nutrition;
+    if (n.calories != null) setEditCalories(String(n.calories));
+    if (n.protein != null) setEditProtein(String(n.protein));
+    if (n.carbs != null) setEditCarbs(String(n.carbs));
+    if (n.fat != null) setEditFat(String(n.fat));
+    if (n.sugar != null) setEditSugar(String(n.sugar));
+    if (n.fiber != null) setEditFiber(String(n.fiber));
+
+    // Merge allergens
+    const merged = [...new Set([...allergens, ...product.allergens])];
+    setAllergens(merged);
+  };
+
+  // --- Save handlers ---
   const handleSave = () => {
     const meal = {
       id: crypto.randomUUID(),
@@ -115,12 +227,18 @@ Antworte NUR mit diesem JSON-Format, ohne Markdown:
       title: title || analysis?.title || 'Mahlzeit',
       summary: analysis?.summary || '',
       ingredients: analysis?.ingredients || [],
-      calories: analysis?.calories,
-      protein: analysis?.protein,
-      carbs: analysis?.carbs,
-      fat: analysis?.fat,
-      allergens: analysis?.allergens || [],
+      calories: parseFloat(editCalories) || 0,
+      protein: parseFloat(editProtein) || 0,
+      carbs: parseFloat(editCarbs) || 0,
+      fat: parseFloat(editFat) || 0,
+      sugar: parseFloat(editSugar) || null,
+      fiber: parseFloat(editFiber) || null,
+      allergens,
       notes,
+      dataSource: offProduct ? 'gemini+openfoodfacts' : 'gemini',
+      offProductName: offProduct?.name || null,
+      offBrand: offProduct?.brand || null,
+      nutriscoreGrade: offProduct?.nutriscoreGrade || null,
     };
     dispatch({ type: 'ADD_MEAL', payload: meal });
     navigate('/');
@@ -287,10 +405,20 @@ Antworte NUR mit diesem JSON-Format, ohne Markdown:
             </div>
           )}
 
-          {/* AI Badge */}
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-sage-50 rounded-full w-fit">
-            <Sparkles className="w-3.5 h-3.5 text-sage-600" />
-            <span className="text-xs font-medium text-sage-700">KI-Analyse abgeschlossen</span>
+          {/* Data Source Badges */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-sage-50 rounded-full">
+              <Sparkles className="w-3.5 h-3.5 text-sage-600" />
+              <span className="text-xs font-medium text-sage-700">KI-Analyse</span>
+            </div>
+            {offProduct && (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-50 rounded-full">
+                <Database className="w-3.5 h-3.5 text-orange-600" />
+                <span className="text-xs font-medium text-orange-700">
+                  Open Food Facts{offProduct.brand ? ` (${offProduct.brand})` : ''}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Title */}
@@ -304,22 +432,147 @@ Antworte NUR mit diesem JSON-Format, ohne Markdown:
             />
           </div>
 
-          {/* Nutrients */}
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { label: 'Kalorien', value: analysis.calories, unit: 'kcal', bg: 'bg-warm-50' },
-              { label: 'Protein', value: analysis.protein, unit: 'g', bg: 'bg-rose-50' },
-              { label: 'Kohlenhydrate', value: analysis.carbs, unit: 'g', bg: 'bg-warm-50' },
-              { label: 'Fett', value: analysis.fat, unit: 'g', bg: 'bg-sky-50' },
-            ].map(n => (
-              <div key={n.label} className={`${n.bg} rounded-xl p-3`}>
-                <span className="text-xs text-gray-500">{n.label}</span>
-                <p className="text-lg font-bold text-gray-800 mt-0.5">
-                  {n.value} <span className="text-sm font-normal text-gray-400">{n.unit}</span>
-                </p>
+          {/* Open Food Facts Search */}
+          <div>
+            <button
+              onClick={() => setShowOffSearch(!showOffSearch)}
+              className="flex items-center gap-2 text-sm font-medium text-orange-600 hover:text-orange-700 transition cursor-pointer"
+            >
+              <Database className="w-4 h-4" />
+              {showOffSearch ? 'Produktsuche ausblenden' : 'Produkt in Open Food Facts suchen'}
+            </button>
+
+            {showOffSearch && (
+              <div className="mt-3 space-y-3">
+                <form onSubmit={handleOffSearchSubmit} className="flex gap-2">
+                  <input
+                    type="text"
+                    value={offQuery}
+                    onChange={e => setOffQuery(e.target.value)}
+                    placeholder="z.B. Hipp Gemüsereis, Aptamil..."
+                    className="flex-1 px-4 py-2.5 rounded-xl bg-white border border-orange-200 focus:outline-none focus:ring-2 focus:ring-orange-300 transition text-sm text-gray-800 placeholder:text-gray-400"
+                  />
+                  <button
+                    type="submit"
+                    disabled={offSearching || !offQuery.trim()}
+                    className="px-4 py-2.5 rounded-xl bg-orange-500 text-white text-sm font-medium hover:bg-orange-600 transition cursor-pointer disabled:opacity-40"
+                  >
+                    {offSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                  </button>
+                </form>
+
+                {/* Search Results */}
+                {offResults.length > 0 && (
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {offResults.map((product, i) => (
+                      <button
+                        key={i}
+                        onClick={() => applyOffProduct(product)}
+                        className="w-full bg-white rounded-xl p-3 shadow-sm flex items-center gap-3 hover:shadow-md transition cursor-pointer text-left"
+                      >
+                        {product.imageUrl ? (
+                          <img src={product.imageUrl} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0" />
+                        ) : (
+                          <div className="w-10 h-10 rounded-lg bg-orange-50 flex items-center justify-center shrink-0">
+                            <Database className="w-5 h-5 text-orange-400" />
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-gray-800 truncate">{product.name || 'Unbekannt'}</p>
+                          <p className="text-xs text-gray-500 truncate">
+                            {product.brand}{product.nutrition.calories != null ? ` · ${product.nutrition.calories} kcal/100g` : ''}
+                          </p>
+                        </div>
+                        {product.nutriscoreGrade && (
+                          <span className={`text-xs font-bold uppercase px-2 py-0.5 rounded ${
+                            product.nutriscoreGrade === 'a' ? 'bg-green-100 text-green-700' :
+                            product.nutriscoreGrade === 'b' ? 'bg-lime-100 text-lime-700' :
+                            product.nutriscoreGrade === 'c' ? 'bg-yellow-100 text-yellow-700' :
+                            product.nutriscoreGrade === 'd' ? 'bg-orange-100 text-orange-700' :
+                            'bg-red-100 text-red-700'
+                          }`}>
+                            {product.nutriscoreGrade}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {offSearching && (
+                  <div className="flex items-center justify-center py-4 gap-2 text-orange-500">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span className="text-sm">Suche in Open Food Facts...</span>
+                  </div>
+                )}
+
+                {!offSearching && offResults.length === 0 && offQuery.length >= 2 && (
+                  <p className="text-xs text-gray-400 text-center py-2">Keine Ergebnisse gefunden</p>
+                )}
               </div>
-            ))}
+            )}
           </div>
+
+          {/* Applied OFF product badge */}
+          {offProduct && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-orange-50 border border-orange-200 rounded-xl">
+              <Database className="w-4 h-4 text-orange-500 shrink-0" />
+              <span className="text-sm text-orange-700 flex-1 truncate">
+                Nährwerte von: {offProduct.name}{offProduct.brand ? ` (${offProduct.brand})` : ''}
+              </span>
+              <button onClick={() => setOffProduct(null)} className="cursor-pointer shrink-0">
+                <X className="w-4 h-4 text-orange-400 hover:text-orange-600" />
+              </button>
+            </div>
+          )}
+
+          {/* Editable Nutrients */}
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <h3 className="text-sm font-medium text-gray-700">Nährwerte (pro Portion)</h3>
+              <Pencil className="w-3.5 h-3.5 text-gray-400" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { label: 'Kalorien', value: editCalories, set: setEditCalories, unit: 'kcal', bg: 'bg-warm-50', border: 'border-warm-200' },
+                { label: 'Protein', value: editProtein, set: setEditProtein, unit: 'g', bg: 'bg-rose-50', border: 'border-rose-200' },
+                { label: 'Kohlenhydrate', value: editCarbs, set: setEditCarbs, unit: 'g', bg: 'bg-warm-50', border: 'border-warm-200' },
+                { label: 'Fett', value: editFat, set: setEditFat, unit: 'g', bg: 'bg-sky-50', border: 'border-sky-200' },
+                { label: 'Zucker', value: editSugar, set: setEditSugar, unit: 'g', bg: 'bg-amber-50', border: 'border-amber-200' },
+                { label: 'Ballaststoffe', value: editFiber, set: setEditFiber, unit: 'g', bg: 'bg-green-50', border: 'border-green-200' },
+              ].map(n => (
+                <div key={n.label} className={`${n.bg} rounded-xl p-3`}>
+                  <span className="text-xs text-gray-500 block mb-1">{n.label}</span>
+                  <div className="flex items-baseline gap-1">
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={n.value}
+                      onChange={e => n.set(e.target.value)}
+                      className={`w-full bg-transparent text-lg font-bold text-gray-800 focus:outline-none border-b ${n.border} focus:border-sage-400 transition`}
+                    />
+                    <span className="text-sm font-normal text-gray-400 shrink-0">{n.unit}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Nutri-Score badge if available */}
+          {offProduct?.nutriscoreGrade && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-600">Nutri-Score:</span>
+              <span className={`text-sm font-bold uppercase px-3 py-1 rounded-full ${
+                offProduct.nutriscoreGrade === 'a' ? 'bg-green-100 text-green-700' :
+                offProduct.nutriscoreGrade === 'b' ? 'bg-lime-100 text-lime-700' :
+                offProduct.nutriscoreGrade === 'c' ? 'bg-yellow-100 text-yellow-700' :
+                offProduct.nutriscoreGrade === 'd' ? 'bg-orange-100 text-orange-700' :
+                'bg-red-100 text-red-700'
+              }`}>
+                {offProduct.nutriscoreGrade.toUpperCase()}
+              </span>
+            </div>
+          )}
 
           {/* Ingredients */}
           {analysis.ingredients.length > 0 && (
@@ -336,14 +589,14 @@ Antworte NUR mit diesem JSON-Format, ohne Markdown:
           )}
 
           {/* Allergen Warning */}
-          {analysis.allergens.length > 0 && (
+          {allergens.length > 0 && (
             <div className="bg-rose-50 border border-rose-200 rounded-xl p-4">
               <div className="flex items-center gap-2 mb-2">
                 <AlertCircle className="w-4 h-4 text-rose-500" />
                 <h3 className="text-sm font-semibold text-rose-700">Allergene erkannt</h3>
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {analysis.allergens.map((allergen, i) => (
+                {allergens.map((allergen, i) => (
                   <span key={i} className="px-2.5 py-1 rounded-full text-xs font-medium bg-rose-100 text-rose-700">
                     {allergen}
                   </span>
@@ -362,16 +615,16 @@ Antworte NUR mit diesem JSON-Format, ohne Markdown:
               value={notes}
               onChange={e => setNotes(e.target.value)}
               rows={3}
-              placeholder="z.B. Hat gut geschmeckt, alles aufgegessen..."
+              placeholder="z.B. Hat gut geschmeckt, enthält Nüsse..."
               className="w-full px-4 py-3 rounded-xl bg-white border border-sage-200 focus:outline-none focus:ring-2 focus:ring-sage-300 transition text-gray-800 placeholder:text-gray-400 resize-none"
             />
+            {detectAllergensFromText(notes).length > 0 && (
+              <p className="text-xs text-rose-500 mt-1 flex items-center gap-1">
+                <AlertCircle className="w-3 h-3" />
+                Allergene aus Notizen erkannt: {detectAllergensFromText(notes).join(', ')}
+              </p>
+            )}
           </div>
-
-          {/* Location Info */}
-          <button className="w-full bg-white rounded-xl p-3 shadow-sm flex items-center gap-3 cursor-pointer hover:shadow-md transition">
-            <MapPin className="w-4 h-4 text-gray-400" />
-            <span className="text-sm text-gray-500">Standort hinzufügen (optional)</span>
-          </button>
 
           {/* Save Button */}
           <div className="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-warm-50 via-warm-50 to-transparent safe-bottom">

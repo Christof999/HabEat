@@ -6,7 +6,7 @@ import MealDetailModal from '../components/home/MealDetailModal';
 
 export default function HistoryPage() {
   const { state } = useApp();
-  const [selectedMeal, setSelectedMeal] = useState(null);
+  const [selectedMealId, setSelectedMealId] = useState(null);
   const [selectedDate, setSelectedDate] = useState(null);
 
   const childMeals = state.meals.filter(m => m.childId === state.activeChildId);
@@ -119,7 +119,7 @@ export default function HistoryPage() {
             </div>
             <div className="p-6 space-y-3">
               {selectedDateMeals.map(meal => (
-                <MealCard key={meal.id} meal={meal} onClick={() => setSelectedMeal(meal)} />
+                <MealCard key={meal.id} meal={meal} onClick={() => setSelectedMealId(meal.id)} />
               ))}
             </div>
           </div>
@@ -127,8 +127,8 @@ export default function HistoryPage() {
       )}
 
       {/* Meal Detail Modal */}
-      {selectedMeal && (
-        <MealDetailModal meal={selectedMeal} onClose={() => setSelectedMeal(null)} />
+      {selectedMealId && state.meals.find(m => m.id === selectedMealId) && (
+        <MealDetailModal meal={state.meals.find(m => m.id === selectedMealId)} onClose={() => setSelectedMealId(null)} />
       )}
     </div>
   );
