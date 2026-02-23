@@ -59,8 +59,6 @@ export default function MealDetailModal({ meal, onClose }) {
     setEditing(false);
   };
 
-  const hasDataSource = meal.dataSource && meal.dataSource !== 'gemini';
-
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
@@ -236,17 +234,31 @@ export default function MealDetailModal({ meal, onClose }) {
           {/* Ingredients */}
           {meal.ingredients && meal.ingredients.length > 0 && (
             <div>
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">Erkannte Zutaten</h3>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold text-gray-700">Erkannte Zutaten</h3>
+                {meal.ingredientsSource === 'openfoodfacts' && (
+                  <span className="text-xs font-medium text-orange-600">Open Food Facts</span>
+                )}
+              </div>
               <div className="flex flex-wrap gap-1.5">
                 {meal.ingredients.map((ingredient, i) => (
                   <span
-                    key={i}
-                    className="px-3 py-1 rounded-full text-xs font-medium bg-sage-50 text-sage-700"
+                    key={`${ingredient}-${i}`}
+                    className={`px-3 py-1 rounded-full text-xs font-medium ${
+                      meal.ingredientsSource === 'openfoodfacts'
+                        ? 'bg-orange-50 text-orange-700 ring-1 ring-orange-200'
+                        : 'bg-sage-50 text-sage-700'
+                    }`}
                   >
                     {ingredient}
                   </span>
                 ))}
               </div>
+              {meal.ingredientsSource === 'openfoodfacts' && meal.aiIngredients?.length > 0 && (
+                <p className="text-xs text-gray-400 mt-2">
+                  KI hat zusätzlich {meal.aiIngredients.length} Hauptzutaten erkannt.
+                </p>
+              )}
             </div>
           )}
 

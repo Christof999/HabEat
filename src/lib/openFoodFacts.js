@@ -65,6 +65,8 @@ export async function searchProducts(query, pageSize = 10) {
  */
 function normalizeProduct(raw) {
   const n = raw.nutriments || {};
+  const ingredientText = raw.ingredients_text_de || raw.ingredients_text || '';
+  const ingredientList = parseIngredientList(ingredientText);
   const calories = getCaloriesPer100g(n);
   return {
     name: raw.product_name_de || raw.product_name || '',
@@ -74,7 +76,8 @@ function normalizeProduct(raw) {
     quantity: raw.quantity || null,
     nutriscoreGrade: raw.nutriscore_grade || null,
     novaGroup: raw.nova_group || null,
-    ingredients: raw.ingredients_text_de || raw.ingredients_text || '',
+    ingredients: ingredientText,
+    ingredientList,
     allergens: (raw.allergens_tags || []).map(tag => {
       // Convert "en:milk" -> "Milch" etc.
       return ALLERGEN_LABELS[tag] || tag.replace(/^\w+:/, '');
@@ -175,6 +178,68 @@ function normalizeTextForSearch(text) {
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function capitalizeFirst(text) {
+  if (!text) return '';
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function cleanIngredientToken(token) {
+  if (!token) return null;
+
+  const cleaned = token
+    .replace(/\*/g, '')
+    .replace(/\b\d+(?:[.,]\d+)?\s*%/g, '')
+    .replace(/\(\s*\)/g, '')
+    .replace(/\.\s*$/g, '')
+    .replace(/^[\s\-–,:;]+|[\s\-–,:;]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!cleaned) return null;
+  const normalized = normalizeTextForSearch(cleaned);
+  if (!normalized || normalized === 'zutaten' || normalized === 'ingredients') return null;
+  return capitalizeFirst(cleaned);
+}
+
+function parseIngredientList(ingredientText) {
+  const raw = (ingredientText || '')
+    .replace(/^\s*(zutaten|ingredients)\s*[:.-]\s*/i, '')
+    .trim();
+  if (!raw) return [];
+
+  const parts = [];
+  let current = '';
+  let nestingDepth = 0;
+
+  for (const char of raw) {
+    if (char === '(' || char === '[' || char === '{') nestingDepth++;
+    if (char === ')' || char === ']' || char === '}') nestingDepth = Math.max(0, nestingDepth - 1);
+
+    if ((char === ',' || char === ';') && nestingDepth === 0) {
+      if (current.trim()) parts.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+
+  if (current.trim()) parts.push(current.trim());
+
+  const dedupe = new Set();
+  const result = [];
+
+  for (const token of parts) {
+    const cleaned = cleanIngredientToken(token);
+    if (!cleaned) continue;
+    const key = normalizeTextForSearch(cleaned);
+    if (dedupe.has(key)) continue;
+    dedupe.add(key);
+    result.push(cleaned);
+  }
+
+  return result;
 }
 
 function stripIngredientNoise(name) {

@@ -31,6 +31,17 @@ function detectAllergensFromText(text) {
   return [...found];
 }
 
+function getAiIngredientNames(analysis) {
+  if (!analysis) return [];
+  if (analysis.ingredientNames?.length > 0) return analysis.ingredientNames;
+  if (analysis.ingredients?.length > 0) {
+    return analysis.ingredients
+      .map(i => (typeof i === 'string' ? i : i?.name))
+      .filter(Boolean);
+  }
+  return [];
+}
+
 export default function TrackingPage() {
   const { state, dispatch, activeChild } = useApp();
   const navigate = useNavigate();
@@ -73,6 +84,9 @@ export default function TrackingPage() {
   // Formula state
   const [formulaAmount, setFormulaAmount] = useState('');
   const [formulaBrand, setFormulaBrand] = useState('');
+
+  const aiIngredientNames = getAiIngredientNames(analysis);
+  const detailedOffIngredients = offProduct?.ingredientList || [];
 
   // Re-analyze allergens when notes change
   useEffect(() => {
@@ -267,6 +281,10 @@ Wichtig: Bei "ingredients" gib für jede Zutat den Namen und die geschätzte Men
 
   // --- Save handlers ---
   const handleSave = () => {
+    const finalIngredients = detailedOffIngredients.length > 0
+      ? detailedOffIngredients
+      : aiIngredientNames;
+
     const meal = {
       id: crypto.randomUUID(),
       childId: state.activeChildId,
@@ -275,7 +293,10 @@ Wichtig: Bei "ingredients" gib für jede Zutat den Namen und die geschätzte Men
       imageUrl: imagePreview,
       title: title || analysis?.title || 'Mahlzeit',
       summary: analysis?.summary || '',
-      ingredients: analysis?.ingredientNames || analysis?.ingredients?.map(i => typeof i === 'string' ? i : i.name) || [],
+      ingredients: finalIngredients,
+      aiIngredients: aiIngredientNames,
+      ingredientsSource: detailedOffIngredients.length > 0 ? 'openfoodfacts' : 'gemini',
+      offIngredientsText: offProduct?.ingredients || null,
       calories: parseFloat(editCalories) || 0,
       protein: parseFloat(editProtein) || 0,
       carbs: parseFloat(editCarbs) || 0,
@@ -679,30 +700,49 @@ Wichtig: Bei "ingredients" gib für jede Zutat den Namen und die geschätzte Men
           )}
 
           {/* Ingredients */}
-          {analysis.ingredients.length > 0 && (
+          {(analysis.ingredients.length > 0 || detailedOffIngredients.length > 0) && (
             <div>
-              <h3 className="text-sm font-medium text-gray-700 mb-2">Erkannte Zutaten</h3>
-              <div className="flex flex-wrap gap-1.5">
-                {analysis.ingredients.map((ing, i) => {
-                  const name = typeof ing === 'string' ? ing : ing.name;
-                  const weight = typeof ing === 'object' ? ing.amount_g : null;
-                  const detail = validationResult?.details?.find(d => d.name === name);
-                  return (
-                    <span
-                      key={i}
-                      className={`px-3 py-1 rounded-full text-xs font-medium ${
-                        detail?.matched
-                          ? 'bg-green-50 text-green-700 ring-1 ring-green-200'
-                          : 'bg-sage-50 text-sage-700'
-                      }`}
-                      title={detail?.matched ? `OFF: ${detail.product}${detail.brand ? ` (${detail.brand})` : ''}` : 'Nicht in OFF gefunden'}
-                    >
-                      {name}{weight ? ` ~${weight}g` : ''}
-                      {detail?.matched && <ShieldCheck className="w-3 h-3 inline ml-1 -mt-0.5" />}
-                    </span>
-                  );
-                })}
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-medium text-gray-700">Erkannte Zutaten</h3>
+                {detailedOffIngredients.length > 0 && (
+                  <span className="text-xs text-orange-600 font-medium">detailliert aus Open Food Facts</span>
+                )}
               </div>
+
+              {detailedOffIngredients.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {detailedOffIngredients.map((ingredient, i) => (
+                    <span
+                      key={`${ingredient}-${i}`}
+                      className="px-3 py-1 rounded-full text-xs font-medium bg-orange-50 text-orange-700 ring-1 ring-orange-200"
+                    >
+                      {ingredient}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {analysis.ingredients.map((ing, i) => {
+                    const name = typeof ing === 'string' ? ing : ing.name;
+                    const weight = typeof ing === 'object' ? ing.amount_g : null;
+                    const detail = validationResult?.details?.find(d => d.name === name);
+                    return (
+                      <span
+                        key={i}
+                        className={`px-3 py-1 rounded-full text-xs font-medium ${
+                          detail?.matched
+                            ? 'bg-green-50 text-green-700 ring-1 ring-green-200'
+                            : 'bg-sage-50 text-sage-700'
+                        }`}
+                        title={detail?.matched ? `OFF: ${detail.product}${detail.brand ? ` (${detail.brand})` : ''}` : 'Nicht in OFF gefunden'}
+                      >
+                        {name}{weight ? ` ~${weight}g` : ''}
+                        {detail?.matched && <ShieldCheck className="w-3 h-3 inline ml-1 -mt-0.5" />}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
