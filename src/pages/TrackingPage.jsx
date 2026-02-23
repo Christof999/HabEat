@@ -31,10 +31,20 @@ export default function TrackingPage() {
       }),
     });
 
-    const data = await response.json();
+    const raw = await response.text();
+    let data = null;
+    try {
+      data = raw ? JSON.parse(raw) : null;
+    } catch {
+      data = null;
+    }
 
     if (!response.ok) {
-      throw new Error(data?.error || `API Fehler: ${response.status}`);
+      throw new Error(data?.error || raw || `API Fehler: ${response.status}`);
+    }
+
+    if (!data) {
+      throw new Error('API Antwort konnte nicht gelesen werden.');
     }
 
     return data;

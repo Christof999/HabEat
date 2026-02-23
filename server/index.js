@@ -190,21 +190,33 @@ function appendOpenFoodFactsFlags(verifiedMeal, openFoodFacts, currentFlags) {
 }
 
 async function callGemini(parts, temperature = 0.2) {
-  if (!GEMINI_API_KEY) {
+  const apiKey = String(GEMINI_API_KEY || '')
+    .trim()
+    .replace(/^['"]+|['"]+$/g, '');
+
+  if (!apiKey) {
     throw new Error('GEMINI_API_KEY ist nicht gesetzt.');
   }
 
-  const response = await fetch(`${GEMINI_URL}?key=${GEMINI_API_KEY}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts }],
-      generationConfig: {
-        temperature,
-        maxOutputTokens: 2048,
-      },
-    }),
-  });
+  const geminiUrl = new URL(GEMINI_URL);
+  geminiUrl.searchParams.set('key', apiKey);
+
+  let response;
+  try {
+    response = await fetch(geminiUrl.toString(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts }],
+        generationConfig: {
+          temperature,
+          maxOutputTokens: 2048,
+        },
+      }),
+    });
+  } catch (err) {
+    throw new Error(`Gemini Request fehlgeschlagen: ${err.message}`);
+  }
 
   if (!response.ok) {
     throw new Error(`Gemini API Fehler: ${response.status}`);
