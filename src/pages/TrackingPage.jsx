@@ -133,6 +133,10 @@ export default function TrackingPage() {
   };
 
   const handleCapture = (source) => {
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+
     if (source === 'camera') {
       fileInputRef.current.setAttribute('capture', 'environment');
     } else {
@@ -143,12 +147,25 @@ export default function TrackingPage() {
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
+
+    setAnalyzeError(null);
+    setQuickType(null);
 
     const reader = new FileReader();
     reader.onload = (ev) => {
-      setImagePreview(ev.target.result);
-      runGeminiAnalysis(ev.target.result);
+      const base64 = ev.target?.result;
+      if (typeof base64 !== 'string') {
+        setAnalyzeError('Das ausgewählte Bild konnte nicht gelesen werden. Bitte ein anderes Bild wählen.');
+        return;
+      }
+
+      setImagePreview(base64);
+      runGeminiAnalysis(base64);
+    };
+    reader.onerror = () => {
+      setAnalyzeError('Bild konnte nicht geladen werden. Bitte erneut versuchen oder ein anderes Format wählen.');
     };
     reader.readAsDataURL(file);
   };
