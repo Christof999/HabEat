@@ -11,6 +11,7 @@ const USER_AGENT = 'HabEat/1.0 (habeat-app)';
 const MIN_MATCH_SCORE = 25;
 const OFF_MAX_RETRIES = 3;
 const LOOKUP_CONCURRENCY = 3;
+const OFF_REQUEST_TIMEOUT_MS = 10000;
 
 const FIELDS = [
   'product_name', 'product_name_de', 'brands', 'image_front_small_url',
@@ -107,7 +108,16 @@ async function fetchWithRetry(url, options) {
 
   for (let attempt = 0; attempt < OFF_MAX_RETRIES; attempt++) {
     try {
-      const res = await fetch(url, options);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), OFF_REQUEST_TIMEOUT_MS);
+
+      let res;
+      try {
+        res = await fetch(url, { ...options, signal: controller.signal });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
       if (res.ok) return res;
 
       const shouldRetry = res.status === 429 || res.status >= 500;
