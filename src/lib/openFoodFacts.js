@@ -8,6 +8,7 @@
 
 const BASE_URL = 'https://world.openfoodfacts.org';
 const USER_AGENT = 'HabEat/1.0 (habeat-app)';
+const MIN_MATCH_SCORE = 25;
 
 const FIELDS = [
   'product_name', 'product_name_de', 'brands', 'image_front_small_url',
@@ -61,6 +62,7 @@ export async function searchProducts(query, pageSize = 10) {
  */
 function normalizeProduct(raw) {
   const n = raw.nutriments || {};
+  const calories = getCaloriesPer100g(n);
   return {
     name: raw.product_name_de || raw.product_name || '',
     brand: raw.brands || '',
@@ -75,22 +77,160 @@ function normalizeProduct(raw) {
       return ALLERGEN_LABELS[tag] || tag.replace(/^\w+:/, '');
     }),
     nutrition: {
-      calories: round(n['energy-kcal_100g']),
-      protein: round(n['proteins_100g']),
-      carbs: round(n['carbohydrates_100g']),
-      fat: round(n['fat_100g']),
-      sugar: round(n['sugars_100g']),
-      saturatedFat: round(n['saturated-fat_100g']),
-      fiber: round(n['fiber_100g']),
-      salt: round(n['salt_100g']),
-      sodium: round(n['sodium_100g']),
+      calories,
+      protein: pickFirstNumber(n, ['proteins_100g', 'proteins_prepared_100g', 'proteins']),
+      carbs: pickFirstNumber(n, ['carbohydrates_100g', 'carbohydrates_prepared_100g', 'carbohydrates']),
+      fat: pickFirstNumber(n, ['fat_100g', 'fat_prepared_100g', 'fat']),
+      sugar: pickFirstNumber(n, ['sugars_100g', 'sugars_prepared_100g', 'sugars']),
+      saturatedFat: pickFirstNumber(n, ['saturated-fat_100g', 'saturated-fat_prepared_100g', 'saturated-fat']),
+      fiber: pickFirstNumber(n, ['fiber_100g', 'fiber_prepared_100g', 'fiber']),
+      salt: pickFirstNumber(n, ['salt_100g', 'salt_prepared_100g', 'salt']),
+      sodium: pickFirstNumber(n, ['sodium_100g', 'sodium_prepared_100g', 'sodium']),
     },
     _raw: raw,
   };
 }
 
 function round(v) {
-  return v != null ? Math.round(v * 10) / 10 : null;
+  const numeric = Number(v);
+  return Number.isFinite(numeric) ? Math.round(numeric * 10) / 10 : null;
+}
+
+function pickFirstNumber(source, keys) {
+  for (const key of keys) {
+    if (source?.[key] != null) {
+      const value = round(source[key]);
+      if (value != null) return value;
+    }
+  }
+  return null;
+}
+
+function getCaloriesPer100g(nutriments) {
+  const directKcal = pickFirstNumber(nutriments, [
+    'energy-kcal_100g',
+    'energy-kcal_prepared_100g',
+    'energy-kcal',
+  ]);
+  if (directKcal != null) return directKcal;
+
+  // Fallback: OFF often stores energy in kJ only.
+  const kj = pickFirstNumber(nutriments, [
+    'energy_100g',
+    'energy-kj_100g',
+    'energy_prepared_100g',
+    'energy-kj_prepared_100g',
+    'energy-kj',
+    'energy',
+  ]);
+  if (kj == null) return null;
+  return round(kj / 4.184);
+}
+
+function normalizeTextForSearch(text) {
+  return (text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function stripIngredientNoise(name) {
+  if (!name) return '';
+  return name
+    // Remove quantities in brackets, e.g. "Kartoffel (120 g)"
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/\[[^\]]*\]/g, ' ')
+    .replace(/\{[^}]*\}/g, ' ')
+    // Remove units and portions
+    .replace(/\b\d+(?:[.,]\d+)?\s*(?:g|kg|mg|ml|l|cl|tl|el|stk|stück|portion(?:en)?|scheibe(?:n)?|becher|dose(?:n)?)\b/gi, ' ')
+    // Remove common preparation descriptors
+    .replace(/\b(?:gekocht|gedaempft|gedämpft|gebraten|roh|frisch|geschnitten|gewuerfelt|gewürfelt|gehackt|gerieben|pueriert|püriert|klein|gross|groß|fein|mager|natur|optional|ohne|mit)\b/gi, ' ')
+    .replace(/[+/|,;:]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildIngredientQueries(name) {
+  const raw = (name || '').trim();
+  const stripped = stripIngredientNoise(raw);
+  const normalized = normalizeTextForSearch(stripped || raw);
+  const queries = new Set();
+
+  if (normalized) queries.add(normalized);
+  if (raw && raw !== normalized) queries.add(raw);
+
+  const splitBySeparators = raw.split(/[,(/|;+]/)[0]?.trim();
+  if (splitBySeparators) queries.add(normalizeTextForSearch(splitBySeparators));
+
+  const tokens = normalized.split(' ').filter(Boolean);
+  if (tokens.length > 1) queries.add(tokens.slice(0, 2).join(' '));
+  if (tokens.length > 0) queries.add(tokens[0]);
+
+  return [...queries].filter(q => q.length >= 2).slice(0, 4);
+}
+
+function hasUsableNutrition(product) {
+  if (!product?.nutrition) return false;
+  const { calories, protein, carbs, fat } = product.nutrition;
+  return [calories, protein, carbs, fat].some(v => v != null);
+}
+
+function scoreProductMatch(ingredientName, product) {
+  const ingredientTokens = normalizeTextForSearch(ingredientName)
+    .split(' ')
+    .filter(t => t.length >= 2);
+  if (ingredientTokens.length === 0) return -1;
+
+  const productText = normalizeTextForSearch(
+    `${product.name || ''} ${product.brand || ''} ${product.ingredients || ''}`
+  );
+
+  const productTokens = new Set(productText.split(' ').filter(Boolean));
+  const overlapCount = ingredientTokens.filter(t => productTokens.has(t)).length;
+
+  if (overlapCount === 0) return -1;
+
+  const fullName = normalizeTextForSearch(product.name || '');
+  const allTokensInName = ingredientTokens.every(t => fullName.includes(t));
+  const nutritionBonus = hasUsableNutrition(product) ? 20 : 0;
+
+  return overlapCount * 18 + (allTokensInName ? 20 : 0) + nutritionBonus;
+}
+
+async function findBestProductMatch(ingredientName) {
+  const queries = buildIngredientQueries(ingredientName);
+  if (queries.length === 0) {
+    return { product: null, queryUsed: null, score: -1 };
+  }
+
+  const seenCodes = new Set();
+  let best = { product: null, queryUsed: null, score: -1 };
+
+  for (const query of queries) {
+    const results = await searchProducts(query, 8);
+    for (const product of results) {
+      const code = product?._raw?.code;
+      if (code && seenCodes.has(code)) continue;
+      if (code) seenCodes.add(code);
+
+      const score = scoreProductMatch(ingredientName, product);
+      if (score > best.score) {
+        best = { product, queryUsed: query, score };
+      }
+    }
+
+    // Early stop once we have a sufficiently strong match.
+    if (best.score >= 50) break;
+  }
+
+  if (best.score < MIN_MATCH_SCORE || !hasUsableNutrition(best.product)) {
+    return { product: null, queryUsed: best.queryUsed, score: best.score };
+  }
+
+  return best;
 }
 
 /**
@@ -104,16 +244,19 @@ function round(v) {
 export async function validateNutritionByIngredients(ingredients, aiNutrition) {
   const DEVIATION_THRESHOLD = 0.30; // 30% deviation triggers correction
 
-  // Search OFF for each ingredient (parallel, max 6 concurrent)
+  // Search OFF for each ingredient with robust query normalization + fallback.
   const lookups = await Promise.all(
     ingredients.map(async (ing) => {
       try {
-        const results = await searchProducts(ing.name, 3);
-        // Pick the best match (first result with nutrition data)
-        const match = results.find(p => p.nutrition.calories != null);
-        return { ingredient: ing, product: match || null };
+        const best = await findBestProductMatch(ing.name);
+        return {
+          ingredient: ing,
+          product: best.product || null,
+          queryUsed: best.queryUsed,
+          score: best.score,
+        };
       } catch {
-        return { ingredient: ing, product: null };
+        return { ingredient: ing, product: null, queryUsed: null, score: -1 };
       }
     })
   );
@@ -121,17 +264,15 @@ export async function validateNutritionByIngredients(ingredients, aiNutrition) {
   const details = [];
   const aggregated = { calories: 0, protein: 0, carbs: 0, fat: 0, sugar: 0, fiber: 0 };
   let matched = 0;
-  let totalWeightUsed = 0;
 
-  for (const { ingredient, product } of lookups) {
+  for (const { ingredient, product, queryUsed, score } of lookups) {
     if (!product) {
-      details.push({ name: ingredient.name, matched: false });
+      details.push({ name: ingredient.name, matched: false, queryUsed, score });
       continue;
     }
     matched++;
     // Use Gemini-estimated weight, fallback to 50g default
     const weight = ingredient.amount_g || 50;
-    totalWeightUsed += weight;
     const factor = weight / 100;
     const n = product.nutrition;
 
@@ -153,6 +294,8 @@ export async function validateNutritionByIngredients(ingredients, aiNutrition) {
       matched: true,
       product: product.name,
       brand: product.brand,
+      queryUsed,
+      score,
       weight,
       per100g: product.nutrition,
       contribution,
