@@ -15,6 +15,9 @@ export default function TrackingPage() {
   const [notes, setNotes] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState(null);
+  const [quickType, setQuickType] = useState(null);
+  const [preForm, setPreForm] = useState({ brand: '', preparedMl: '', consumedMl: '', comment: '' });
+  const [breastForm, setBreastForm] = useState({ durationMin: '', side: 'links', comment: '' });
 
   const runMealVerification = async (base64Image) => {
     const response = await fetch('/api/meals/verify', {
@@ -37,43 +40,96 @@ export default function TrackingPage() {
     return data;
   };
 
-  const handleQuickMeal = (type) => {
-    const quickMeals = {
-      breastfeeding: {
-        title: 'Stillen',
-        ingredients: ['Muttermilch'],
-        calories: 90,
-        protein: 1,
-        carbs: 7,
-        fat: 5,
-        summary: 'Manuell erfasste Stillmahlzeit.',
-      },
-      pre: {
-        title: 'Pre-Nahrung',
-        ingredients: ['Pre-Nahrung'],
-        calories: 100,
-        protein: 2,
-        carbs: 10,
-        fat: 4,
-        summary: 'Manuell erfasste Pre-Nahrungsmahlzeit.',
-      },
-    };
+  const parseNumber = (value) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : 0;
+  };
 
-    const meal = quickMeals[type];
-    if (!meal) return;
+  const roundOne = (number) => Math.round(number * 10) / 10;
+
+  const handleQuickMeal = (type) => {
+    setQuickType(prev => (prev === type ? null : type));
+  };
+
+  const handleCreatePreMeal = () => {
+    const preparedMl = parseNumber(preForm.preparedMl);
+    const consumedMl = parseNumber(preForm.consumedMl);
+    const effectiveMl = consumedMl || preparedMl;
+
+    if (!effectiveMl) {
+      setAnalyzeError('Bitte gib mindestens die getrunkene oder zubereitete Menge in ml ein.');
+      return;
+    }
+
+    const brand = preForm.brand.trim();
+    const calories = roundOne(effectiveMl * 0.67);
+    const protein = roundOne(effectiveMl * 0.013);
+    const carbs = roundOne(effectiveMl * 0.072);
+    const fat = roundOne(effectiveMl * 0.036);
 
     setImagePreview(null);
     setAnalyzeError(null);
     setAnalysis({
-      ...meal,
+      title: brand ? `Pre-Nahrung (${brand})` : 'Pre-Nahrung',
+      ingredients: brand ? ['Pre-Nahrung', brand] : ['Pre-Nahrung'],
+      calories,
+      protein,
+      carbs,
+      fat,
+      summary: `Manuell erfasst: ${effectiveMl} ml Pre-Nahrung.`,
       allergens: [],
       confidence: null,
       flags: [],
       original: null,
       openFoodFacts: null,
+      feedingType: 'pre',
+      feedingDetails: {
+        brand,
+        preparedMl: preparedMl || null,
+        consumedMl: consumedMl || null,
+      },
     });
-    setTitle(meal.title);
+    setNotes(preForm.comment.trim());
+    setTitle(brand ? `Pre-Nahrung (${brand})` : 'Pre-Nahrung');
     setStep('review');
+    setQuickType(null);
+  };
+
+  const handleCreateBreastMeal = () => {
+    const durationMin = parseNumber(breastForm.durationMin);
+    if (!durationMin) {
+      setAnalyzeError('Bitte gib die Dauer des Stillens in Minuten ein.');
+      return;
+    }
+
+    const calories = roundOne(durationMin * 1.3);
+
+    setImagePreview(null);
+    setAnalyzeError(null);
+    setAnalysis({
+      title: 'Stillen',
+      ingredients: ['Muttermilch'],
+      calories,
+      protein: null,
+      carbs: null,
+      fat: null,
+      summary: `Manuell erfasst: ${durationMin} Minuten (${breastForm.side}).`,
+      allergens: [],
+      confidence: null,
+      flags: [],
+      original: null,
+      openFoodFacts: null,
+      feedingType: 'breastfeeding',
+      feedingDetails: {
+        durationMin,
+        side: breastForm.side,
+        comment: breastForm.comment.trim(),
+      },
+    });
+    setNotes(breastForm.comment.trim());
+    setTitle('Stillen');
+    setStep('review');
+    setQuickType(null);
   };
 
   const handleCapture = (source) => {
@@ -149,6 +205,8 @@ export default function TrackingPage() {
       aiFlags: analysis?.flags || [],
       aiOriginal: analysis?.original || null,
       aiOpenFoodFacts: analysis?.openFoodFacts || null,
+      feedingType: analysis?.feedingType || null,
+      feedingDetails: analysis?.feedingDetails || null,
       notes,
     };
     dispatch({ type: 'ADD_MEAL', payload: meal });
@@ -219,17 +277,97 @@ export default function TrackingPage() {
           <div className="grid grid-cols-2 gap-3 pt-2">
             <button
               onClick={() => handleQuickMeal('breastfeeding')}
-              className="bg-white rounded-xl px-4 py-3 text-sm font-medium text-gray-700 shadow-sm hover:shadow-md transition cursor-pointer"
+              className={`rounded-xl px-4 py-3 text-sm font-medium shadow-sm hover:shadow-md transition cursor-pointer ${
+                quickType === 'breastfeeding' ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-white text-gray-700'
+              }`}
             >
               Stillen erfassen
             </button>
             <button
               onClick={() => handleQuickMeal('pre')}
-              className="bg-white rounded-xl px-4 py-3 text-sm font-medium text-gray-700 shadow-sm hover:shadow-md transition cursor-pointer"
+              className={`rounded-xl px-4 py-3 text-sm font-medium shadow-sm hover:shadow-md transition cursor-pointer ${
+                quickType === 'pre' ? 'bg-sky-50 text-sky-700 border border-sky-200' : 'bg-white text-gray-700'
+              }`}
             >
               Pre-Nahrung erfassen
             </button>
           </div>
+
+          {quickType === 'pre' && (
+            <div className="bg-white rounded-2xl p-4 shadow-sm space-y-3">
+              <h3 className="text-sm font-semibold text-gray-800">Pre-Nahrung Details</h3>
+              <input
+                value={preForm.brand}
+                onChange={e => setPreForm(prev => ({ ...prev, brand: e.target.value }))}
+                placeholder="Marke (z. B. Aptamil)"
+                className="w-full px-3 py-2 rounded-xl bg-warm-50 border border-sage-200 text-sm"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="number"
+                  value={preForm.preparedMl}
+                  onChange={e => setPreForm(prev => ({ ...prev, preparedMl: e.target.value }))}
+                  placeholder="zubereitet (ml)"
+                  className="w-full px-3 py-2 rounded-xl bg-warm-50 border border-sage-200 text-sm"
+                />
+                <input
+                  type="number"
+                  value={preForm.consumedMl}
+                  onChange={e => setPreForm(prev => ({ ...prev, consumedMl: e.target.value }))}
+                  placeholder="getrunken (ml)"
+                  className="w-full px-3 py-2 rounded-xl bg-warm-50 border border-sage-200 text-sm"
+                />
+              </div>
+              <textarea
+                rows={2}
+                value={preForm.comment}
+                onChange={e => setPreForm(prev => ({ ...prev, comment: e.target.value }))}
+                placeholder="Kommentar (optional)"
+                className="w-full px-3 py-2 rounded-xl bg-warm-50 border border-sage-200 text-sm resize-none"
+              />
+              <button
+                onClick={handleCreatePreMeal}
+                className="w-full bg-sage-500 hover:bg-sage-600 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors cursor-pointer"
+              >
+                Pre-Mahlzeit übernehmen
+              </button>
+            </div>
+          )}
+
+          {quickType === 'breastfeeding' && (
+            <div className="bg-white rounded-2xl p-4 shadow-sm space-y-3">
+              <h3 className="text-sm font-semibold text-gray-800">Stillen Details</h3>
+              <input
+                type="number"
+                value={breastForm.durationMin}
+                onChange={e => setBreastForm(prev => ({ ...prev, durationMin: e.target.value }))}
+                placeholder="Dauer (Minuten)"
+                className="w-full px-3 py-2 rounded-xl bg-warm-50 border border-sage-200 text-sm"
+              />
+              <select
+                value={breastForm.side}
+                onChange={e => setBreastForm(prev => ({ ...prev, side: e.target.value }))}
+                className="w-full px-3 py-2 rounded-xl bg-warm-50 border border-sage-200 text-sm"
+              >
+                <option value="links">Links</option>
+                <option value="rechts">Rechts</option>
+                <option value="beide">Beide</option>
+              </select>
+              <textarea
+                rows={2}
+                value={breastForm.comment}
+                onChange={e => setBreastForm(prev => ({ ...prev, comment: e.target.value }))}
+                placeholder="Kommentar (optional)"
+                className="w-full px-3 py-2 rounded-xl bg-warm-50 border border-sage-200 text-sm resize-none"
+              />
+              <button
+                onClick={handleCreateBreastMeal}
+                className="w-full bg-sage-500 hover:bg-sage-600 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors cursor-pointer"
+              >
+                Stillmahlzeit übernehmen
+              </button>
+            </div>
+          )}
         </div>
       )}
 

@@ -175,6 +175,7 @@ function syncToFirestore(username, action) {
         removeChildFromDb(username, action.payload);
         break;
       case 'ADD_MEAL':
+      case 'UPDATE_MEAL':
         saveMeal(username, action.payload);
         break;
       case 'ADD_SYMPTOM':
@@ -219,6 +220,18 @@ export function AppProvider({ children: reactChildren }) {
   // Wrapped dispatch that also syncs to Firestore
   const dispatch = (action) => {
     rawDispatch(action);
+
+    if (action.type === 'UPDATE_MEAL') {
+      const currentMeal = state.meals.find(m => m.id === action.payload.id);
+      if (currentMeal) {
+        syncToFirestore(state.currentUser, {
+          ...action,
+          payload: { ...currentMeal, ...action.payload },
+        });
+        return;
+      }
+    }
+
     syncToFirestore(state.currentUser, action);
   };
 
