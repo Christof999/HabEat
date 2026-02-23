@@ -11,7 +11,7 @@ const USER_AGENT = 'HabEat/1.0 (habeat-app)';
 const MIN_MATCH_SCORE = 25;
 const OFF_MAX_RETRIES = 3;
 const LOOKUP_CONCURRENCY = 3;
-const OFF_REQUEST_TIMEOUT_MS = 10000;
+const OFF_REQUEST_TIMEOUT_MS = 30000;
 
 const FIELDS = [
   'product_name', 'product_name_de', 'brands', 'image_front_small_url',
