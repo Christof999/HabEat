@@ -200,7 +200,6 @@ function buildIngredientQueries(name) {
   const queries = new Set();
 
   if (normalized) queries.add(normalized);
-  if (raw && raw !== normalized) queries.add(raw);
 
   const splitBySeparators = raw.split(/[,(/|;+]/)[0]?.trim();
   if (splitBySeparators) queries.add(normalizeTextForSearch(splitBySeparators));
@@ -262,8 +261,8 @@ async function findBestProductMatch(ingredientName) {
       }
     }
 
-    // Early stop once we have a sufficiently strong match.
-    if (best.score >= 50) break;
+    // Early stop once we have a sufficiently good match.
+    if (best.score >= MIN_MATCH_SCORE + 10) break;
   }
 
   if (best.score < MIN_MATCH_SCORE || !hasUsableNutrition(best.product)) {
