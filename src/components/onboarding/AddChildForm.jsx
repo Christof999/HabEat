@@ -7,7 +7,7 @@ const commonAllergens = [
 ];
 
 const commonConditions = [
-  'Diabetes', 'Neurodermitis', 'Asthma', 'Zöliakie',
+  'Diabetes Typ 1', 'Diabetes Typ 2', 'Neurodermitis', 'Asthma', 'Zöliakie',
   'Laktoseintoleranz', 'Fruktoseintoleranz', 'Reflux', 'Mukoviszidose',
 ];
 
@@ -323,6 +323,9 @@ export default function AddChildForm({ onAdd, onBack, childIndex = 0 }) {
             <Heart className="w-4 h-4" />
             Bekannte Vorerkrankungen
           </label>
+          <p className="text-xs text-gray-400 mb-3">
+            Bei Diabetes bitte Typ 1 oder Typ 2 gezielt auswählen.
+          </p>
           <div className="flex flex-wrap gap-2 mb-3">
             {commonConditions.map(condition => (
               <button

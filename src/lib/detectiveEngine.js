@@ -213,7 +213,7 @@ export async function analyzeWithAI(meals, symptoms, childName, { knownAllergies
     ? `\nBekannte Allergien/Unverträglichkeiten: ${knownAllergies.join(', ')}.`
     : '';
   const conditionInfo = knownConditions?.length > 0
-    ? `\nBekannte Vorerkrankungen: ${knownConditions.join(', ')}. Berücksichtige diese bei der Analyse (z.B. bei Diabetes auf Zucker/Kohlenhydrate achten, bei Zöliakie auf Gluten, bei Reflux auf säurehaltige Lebensmittel).`
+    ? `\nBekannte Vorerkrankungen: ${knownConditions.join(', ')}. Berücksichtige diese bei der Analyse (z.B. bei Diabetes Typ 1 besonders Kohlenhydrate und Broteinheiten beachten, bei Zöliakie auf Gluten, bei Reflux auf säurehaltige Lebensmittel).`
     : '';
 
   const prompt = `Du bist ein Ernährungsberater-Assistent für Kleinkinder. Analysiere die folgenden Daten für das Kind "${childName}".

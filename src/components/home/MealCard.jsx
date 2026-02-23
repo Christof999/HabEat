@@ -1,5 +1,7 @@
 import { Clock, ChevronRight, Baby, Droplets } from 'lucide-react';
 import PortionPicker from './PortionPicker';
+import { useApp } from '../../contexts/AppContext';
+import { hasDiabetesType1, calculateCarbUnits } from '../../lib/diabetes';
 
 function portionFactor(meal) {
   if (meal.portionEaten === 'half') return 0.5;
@@ -10,11 +12,15 @@ function portionFactor(meal) {
 const SIDE_LABELS = { left: 'Links', right: 'Rechts', both: 'Beide' };
 
 export default function MealCard({ meal, onClick, showPortionPicker }) {
+  const { activeChild } = useApp();
   const time = new Date(meal.timestamp).toLocaleTimeString('de-DE', {
     hour: '2-digit',
     minute: '2-digit',
   });
   const adjustedCal = meal.calories ? Math.round(meal.calories * portionFactor(meal)) : null;
+  const adjustedCarbs = meal.carbs != null ? Math.round(meal.carbs * portionFactor(meal) * 10) / 10 : null;
+  const adjustedBE = adjustedCarbs != null ? calculateCarbUnits(adjustedCarbs).be : null;
+  const isType1Diabetes = hasDiabetesType1(activeChild?.knownConditions || []);
   const mealType = meal.mealType || 'food';
 
   return (
@@ -64,6 +70,9 @@ export default function MealCard({ meal, onClick, showPortionPicker }) {
             <span className="text-xs">{time}</span>
             {mealType === 'food' && adjustedCal != null && (
               <span className="text-xs ml-2">{adjustedCal} kcal</span>
+            )}
+            {mealType === 'food' && isType1Diabetes && adjustedBE != null && (
+              <span className="text-xs ml-2 text-sky-600 font-medium">{adjustedBE} BE</span>
             )}
           </div>
         </div>

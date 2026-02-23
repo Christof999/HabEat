@@ -3,11 +3,13 @@ import { CalendarDays, ChevronRight, X, Flame } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import MealCard from '../components/home/MealCard';
 import MealDetailModal from '../components/home/MealDetailModal';
+import { hasDiabetesType1, getPortionFactor, calculateCarbUnits } from '../lib/diabetes';
 
 export default function HistoryPage() {
-  const { state } = useApp();
+  const { state, activeChild } = useApp();
   const [selectedMealId, setSelectedMealId] = useState(null);
   const [selectedDate, setSelectedDate] = useState(null);
+  const isType1Diabetes = hasDiabetesType1(activeChild?.knownConditions || []);
 
   const childMeals = state.meals.filter(m => m.childId === state.activeChildId);
 
@@ -38,15 +40,14 @@ export default function HistoryPage() {
     ? groupedByDate.find(([d]) => d === selectedDate)?.[1] || []
     : [];
 
-  const portionFactor = (meal) => {
-    if (meal.portionEaten === 'half') return 0.5;
-    if (meal.portionEaten === 'some') return 0.25;
-    return 1;
-  };
-
   const daySummary = (meals) => {
-    const totalCal = meals.reduce((sum, m) => sum + Math.round((m.calories || 0) * portionFactor(m)), 0);
-    return { totalCal, mealCount: meals.length };
+    const totalCal = meals.reduce((sum, m) => sum + Math.round((m.calories || 0) * getPortionFactor(m.portionEaten)), 0);
+    const totalCarbs = meals.reduce(
+      (sum, m) => sum + ((m.carbs || 0) * getPortionFactor(m.portionEaten)),
+      0
+    );
+    const totalBE = calculateCarbUnits(totalCarbs).be;
+    return { totalCal, mealCount: meals.length, totalBE };
   };
 
   return (
@@ -61,7 +62,7 @@ export default function HistoryPage() {
       <div className="px-6 space-y-3 pb-24">
         {groupedByDate.length > 0 ? (
           groupedByDate.map(([dateStr, meals]) => {
-            const { totalCal, mealCount } = daySummary(meals);
+            const { totalCal, mealCount, totalBE } = daySummary(meals);
             return (
               <button
                 key={dateStr}
@@ -78,6 +79,7 @@ export default function HistoryPage() {
                   <p className="text-xs text-gray-500 mt-0.5">
                     {mealCount} {mealCount === 1 ? 'Mahlzeit' : 'Mahlzeiten'}
                     {totalCal > 0 && ` · ${totalCal} kcal`}
+                    {isType1Diabetes && totalBE > 0 && ` · ${totalBE} BE`}
                   </p>
                 </div>
                 <ChevronRight className="w-4 h-4 text-gray-300" />
@@ -108,6 +110,11 @@ export default function HistoryPage() {
                   <span className="text-sm text-gray-500">
                     {daySummary(selectedDateMeals).totalCal} kcal gesamt
                   </span>
+                  {isType1Diabetes && daySummary(selectedDateMeals).totalBE > 0 && (
+                    <span className="text-sm text-sky-600 font-medium">
+                      · {daySummary(selectedDateMeals).totalBE} BE
+                    </span>
+                  )}
                 </div>
               </div>
               <button

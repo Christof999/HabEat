@@ -1,15 +1,10 @@
 import { useState } from 'react';
 import { X, Clock, Flame, Droplets, Wheat, Beef, Baby, Pencil, Check, Database, AlertCircle, Leaf, Cookie } from 'lucide-react';
 import { useApp } from '../../contexts/AppContext';
-
-function portionFactor(meal) {
-  if (meal.portionEaten === 'half') return 0.5;
-  if (meal.portionEaten === 'some') return 0.25;
-  return 1;
-}
+import { hasDiabetesType1, getPortionFactor, getAdjustedCarbs, calculateCarbUnits } from '../../lib/diabetes';
 
 export default function MealDetailModal({ meal, onClose }) {
-  const { dispatch } = useApp();
+  const { dispatch, activeChild } = useApp();
   const [editing, setEditing] = useState(false);
   const [editValues, setEditValues] = useState({
     calories: meal.calories ?? '',
@@ -33,8 +28,12 @@ export default function MealDetailModal({ meal, onClose }) {
   });
 
   const mealType = meal.mealType || 'food';
-  const factor = portionFactor(meal);
+  const factor = getPortionFactor(meal.portionEaten);
   const adjust = (v) => v != null ? Math.round(v * factor) : v;
+  const isType1Diabetes = hasDiabetesType1(activeChild?.knownConditions || []);
+  const carbsBase = editing ? parseFloat(editValues.carbs) || 0 : meal.carbs || 0;
+  const carbsForUnits = getAdjustedCarbs(carbsBase, meal.portionEaten) || 0;
+  const carbUnits = calculateCarbUnits(carbsForUnits);
 
   const nutrients = [
     { icon: Flame, label: 'Kalorien', key: 'calories', value: adjust(meal.calories), unit: 'kcal', color: 'text-warm-600' },
@@ -46,14 +45,18 @@ export default function MealDetailModal({ meal, onClose }) {
   ];
 
   const handleSaveEdit = () => {
+    const carbsNumber = parseFloat(editValues.carbs) || 0;
+    const units = calculateCarbUnits(carbsNumber);
     const updates = {
       id: meal.id,
       calories: parseFloat(editValues.calories) || 0,
       protein: parseFloat(editValues.protein) || 0,
-      carbs: parseFloat(editValues.carbs) || 0,
+      carbs: carbsNumber,
       fat: parseFloat(editValues.fat) || 0,
       sugar: parseFloat(editValues.sugar) || null,
       fiber: parseFloat(editValues.fiber) || null,
+      carbsBE: units.be,
+      carbsKE: units.ke,
     };
     dispatch({ type: 'UPDATE_MEAL', payload: updates });
     setEditing(false);
@@ -227,6 +230,21 @@ export default function MealDetailModal({ meal, onClose }) {
                     </div>
                   ))}
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* Type 1 diabetes helper */}
+          {mealType === 'food' && isType1Diabetes && (
+            <div className="bg-sky-50 border border-sky-200 rounded-xl p-4">
+              <h3 className="text-sm font-semibold text-sky-800 mb-1">Diabetes Typ 1</h3>
+              <p className="text-sm text-sky-700">
+                {carbUnits.carbs} g Kohlenhydrate entsprechen ca. <strong>{carbUnits.be} BE</strong> ({carbUnits.ke} KE).
+              </p>
+              {meal.portionEaten && (
+                <p className="text-xs text-sky-600 mt-1">
+                  Berechnet auf gegessene Menge.
+                </p>
               )}
             </div>
           )}

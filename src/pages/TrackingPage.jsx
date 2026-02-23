@@ -8,6 +8,7 @@ import {
 import { useApp } from '../contexts/AppContext';
 import { analyzeImageWithGemini } from '../lib/gemini';
 import { searchProducts, validateNutritionByIngredients } from '../lib/openFoodFacts';
+import { hasDiabetesType1, calculateCarbUnits } from '../lib/diabetes';
 
 // Keywords in notes that map to allergens (German)
 const ALLERGEN_KEYWORDS = {
@@ -88,6 +89,8 @@ export default function TrackingPage() {
   const aiIngredientNames = getAiIngredientNames(analysis);
   const detailedOffIngredients = offProduct?.ingredientList || [];
   const hasDetailedOffIngredients = detailedOffIngredients.length >= 3;
+  const isType1Diabetes = hasDiabetesType1(activeChild?.knownConditions || []);
+  const carbUnits = calculateCarbUnits(parseFloat(editCarbs) || 0);
 
   // Re-analyze allergens when notes change
   useEffect(() => {
@@ -129,7 +132,7 @@ export default function TrackingPage() {
       ? `Das Kind hat bekannte Allergien/Unverträglichkeiten: ${activeChild.knownAllergies.join(', ')}.`
       : '';
     const childConditions = activeChild?.knownConditions?.length > 0
-      ? ` Das Kind hat folgende Vorerkrankungen: ${activeChild.knownConditions.join(', ')}. Berücksichtige dies bei der Bewertung (z.B. bei Diabetes auf Zucker achten).`
+      ? ` Das Kind hat folgende Vorerkrankungen: ${activeChild.knownConditions.join(', ')}. Berücksichtige dies bei der Bewertung (z.B. bei Diabetes Typ 1 besonders Kohlenhydrate und Broteinheiten beachten).`
       : '';
 
     const prompt = `Du bist ein Ernährungsexperte für Kleinkinder. Analysiere dieses Foto einer Mahlzeit.
@@ -285,6 +288,7 @@ Wichtig: Bei "ingredients" gib für jede Zutat den Namen und die geschätzte Men
     const finalIngredients = hasDetailedOffIngredients
       ? detailedOffIngredients
       : aiIngredientNames;
+    const units = calculateCarbUnits(parseFloat(editCarbs) || 0);
 
     const meal = {
       id: crypto.randomUUID(),
@@ -304,6 +308,8 @@ Wichtig: Bei "ingredients" gib für jede Zutat den Namen und die geschätzte Men
       fat: parseFloat(editFat) || 0,
       sugar: parseFloat(editSugar) || null,
       fiber: parseFloat(editFiber) || null,
+      carbsBE: units.be,
+      carbsKE: units.ke,
       allergens,
       notes,
       dataSource: validationResult?.corrected ? 'gemini+off-validiert' : offProduct ? 'gemini+openfoodfacts' : 'gemini',
@@ -683,6 +689,19 @@ Wichtig: Bei "ingredients" gib für jede Zutat den Namen und die geschätzte Men
               ))}
             </div>
           </div>
+
+          {/* Type 1 diabetes helpers */}
+          {isType1Diabetes && (
+            <div className="bg-sky-50 border border-sky-200 rounded-xl p-4">
+              <h3 className="text-sm font-semibold text-sky-800 mb-1">Diabetes Typ 1</h3>
+              <p className="text-sm text-sky-700">
+                {carbUnits.carbs} g Kohlenhydrate entsprechen ca. <strong>{carbUnits.be} BE</strong> ({carbUnits.ke} KE).
+              </p>
+              <p className="text-xs text-sky-600 mt-1">
+                Hinweis: Schätzwert pro Portion. Bitte vor Insulingabe individuell prüfen.
+              </p>
+            </div>
+          )}
 
           {/* Nutri-Score badge if available */}
           {offProduct?.nutriscoreGrade && (
