@@ -9,6 +9,8 @@
 const BASE_URL = 'https://world.openfoodfacts.org';
 const USER_AGENT = 'HabEat/1.0 (habeat-app)';
 const MIN_MATCH_SCORE = 25;
+const OFF_MAX_RETRIES = 3;
+const LOOKUP_CONCURRENCY = 3;
 
 const FIELDS = [
   'product_name', 'product_name_de', 'brands', 'image_front_small_url',
@@ -49,7 +51,7 @@ export async function searchProducts(query, pageSize = 10) {
     lc: 'de',
   });
   const url = `${BASE_URL}/cgi/search.pl?${params}`;
-  const res = await fetch(url, {
+  const res = await fetchWithRetry(url, {
     headers: { 'User-Agent': USER_AGENT },
   });
   if (!res.ok) return [];
@@ -94,6 +96,34 @@ function normalizeProduct(raw) {
 function round(v) {
   const numeric = Number(v);
   return Number.isFinite(numeric) ? Math.round(numeric * 10) / 10 : null;
+}
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function fetchWithRetry(url, options) {
+  let lastError = null;
+
+  for (let attempt = 0; attempt < OFF_MAX_RETRIES; attempt++) {
+    try {
+      const res = await fetch(url, options);
+      if (res.ok) return res;
+
+      const shouldRetry = res.status === 429 || res.status >= 500;
+      if (!shouldRetry || attempt === OFF_MAX_RETRIES - 1) return res;
+    } catch (err) {
+      lastError = err;
+      if (attempt === OFF_MAX_RETRIES - 1) throw err;
+    }
+
+    // Exponential backoff with a small jitter.
+    const backoff = 350 * (2 ** attempt) + Math.floor(Math.random() * 150);
+    await wait(backoff);
+  }
+
+  if (lastError) throw lastError;
+  throw new Error('OpenFoodFacts request failed');
 }
 
 function pickFirstNumber(source, keys) {
@@ -233,6 +263,22 @@ async function findBestProductMatch(ingredientName) {
   return best;
 }
 
+async function mapWithConcurrency(items, limit, mapper) {
+  const results = new Array(items.length);
+  let index = 0;
+
+  async function worker() {
+    while (index < items.length) {
+      const currentIndex = index++;
+      results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(limit, items.length) }, () => worker());
+  await Promise.all(workers);
+  return results;
+}
+
 /**
  * Validate AI-estimated nutrition by searching each ingredient in OFF
  * and computing aggregated nutrition from per-100g data + estimated weights.
@@ -245,8 +291,8 @@ export async function validateNutritionByIngredients(ingredients, aiNutrition) {
   const DEVIATION_THRESHOLD = 0.30; // 30% deviation triggers correction
 
   // Search OFF for each ingredient with robust query normalization + fallback.
-  const lookups = await Promise.all(
-    ingredients.map(async (ing) => {
+  // Limit concurrency to reduce API bursts and avoid transient 429 responses.
+  const lookups = await mapWithConcurrency(ingredients, LOOKUP_CONCURRENCY, async (ing) => {
       try {
         const best = await findBestProductMatch(ing.name);
         return {
@@ -258,8 +304,7 @@ export async function validateNutritionByIngredients(ingredients, aiNutrition) {
       } catch {
         return { ingredient: ing, product: null, queryUsed: null, score: -1 };
       }
-    })
-  );
+    });
 
   const details = [];
   const aggregated = { calories: 0, protein: 0, carbs: 0, fat: 0, sugar: 0, fiber: 0 };
