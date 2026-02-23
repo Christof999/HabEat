@@ -93,6 +93,109 @@ function round(v) {
   return v != null ? Math.round(v * 10) / 10 : null;
 }
 
+/**
+ * Validate AI-estimated nutrition by searching each ingredient in OFF
+ * and computing aggregated nutrition from per-100g data + estimated weights.
+ *
+ * @param {Array<{name: string, amount_g: number|null}>} ingredients
+ * @param {{calories, protein, carbs, fat, sugar, fiber}} aiNutrition - Gemini estimates
+ * @returns {Promise<{corrected: boolean, offNutrition, corrections: Array, matched: number, total: number, details: Array}>}
+ */
+export async function validateNutritionByIngredients(ingredients, aiNutrition) {
+  const DEVIATION_THRESHOLD = 0.30; // 30% deviation triggers correction
+
+  // Search OFF for each ingredient (parallel, max 6 concurrent)
+  const lookups = await Promise.all(
+    ingredients.map(async (ing) => {
+      try {
+        const results = await searchProducts(ing.name, 3);
+        // Pick the best match (first result with nutrition data)
+        const match = results.find(p => p.nutrition.calories != null);
+        return { ingredient: ing, product: match || null };
+      } catch {
+        return { ingredient: ing, product: null };
+      }
+    })
+  );
+
+  const details = [];
+  const aggregated = { calories: 0, protein: 0, carbs: 0, fat: 0, sugar: 0, fiber: 0 };
+  let matched = 0;
+  let totalWeightUsed = 0;
+
+  for (const { ingredient, product } of lookups) {
+    if (!product) {
+      details.push({ name: ingredient.name, matched: false });
+      continue;
+    }
+    matched++;
+    // Use Gemini-estimated weight, fallback to 50g default
+    const weight = ingredient.amount_g || 50;
+    totalWeightUsed += weight;
+    const factor = weight / 100;
+    const n = product.nutrition;
+
+    const contribution = {
+      calories: round((n.calories || 0) * factor),
+      protein: round((n.protein || 0) * factor),
+      carbs: round((n.carbs || 0) * factor),
+      fat: round((n.fat || 0) * factor),
+      sugar: round((n.sugar || 0) * factor),
+      fiber: round((n.fiber || 0) * factor),
+    };
+
+    for (const key of Object.keys(aggregated)) {
+      aggregated[key] += contribution[key] || 0;
+    }
+
+    details.push({
+      name: ingredient.name,
+      matched: true,
+      product: product.name,
+      brand: product.brand,
+      weight,
+      per100g: product.nutrition,
+      contribution,
+    });
+  }
+
+  // Round aggregated values
+  for (const key of Object.keys(aggregated)) {
+    aggregated[key] = round(aggregated[key]);
+  }
+
+  // Compare AI values with OFF aggregated values
+  const corrections = [];
+  const fields = ['calories', 'protein', 'carbs', 'fat', 'sugar', 'fiber'];
+  const fieldLabels = { calories: 'Kalorien', protein: 'Protein', carbs: 'Kohlenhydrate', fat: 'Fett', sugar: 'Zucker', fiber: 'Ballaststoffe' };
+
+  for (const field of fields) {
+    const ai = aiNutrition[field] || 0;
+    const off = aggregated[field] || 0;
+    if (ai === 0 && off === 0) continue;
+    const base = Math.max(ai, off, 1);
+    const deviation = Math.abs(ai - off) / base;
+    if (deviation > DEVIATION_THRESHOLD) {
+      corrections.push({
+        field,
+        label: fieldLabels[field],
+        aiValue: ai,
+        offValue: off,
+        deviation: round(deviation * 100),
+      });
+    }
+  }
+
+  return {
+    corrected: corrections.length > 0 && matched >= 2,
+    offNutrition: aggregated,
+    corrections,
+    matched,
+    total: ingredients.length,
+    details,
+  };
+}
+
 const ALLERGEN_LABELS = {
   'en:milk': 'Milch',
   'en:eggs': 'Ei',

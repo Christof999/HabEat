@@ -3,10 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Camera, Image, Sparkles, Loader2, StickyNote, Check,
   AlertCircle, Baby, Clock, Droplets, Search, Database, Pencil, X,
+  ShieldCheck, ArrowRightLeft, Info,
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import { analyzeImageWithGemini } from '../lib/gemini';
-import { searchProducts } from '../lib/openFoodFacts';
+import { searchProducts, validateNutritionByIngredients } from '../lib/openFoodFacts';
 
 // Keywords in notes that map to allergens (German)
 const ALLERGEN_KEYWORDS = {
@@ -60,6 +61,10 @@ export default function TrackingPage() {
   const [offSearching, setOffSearching] = useState(false);
   const [offProduct, setOffProduct] = useState(null);
   const [showOffSearch, setShowOffSearch] = useState(false);
+
+  // Nutrition validation state (OFF cross-check)
+  const [validationResult, setValidationResult] = useState(null); // { corrected, corrections[], matched, total }
+  const [isValidating, setIsValidating] = useState(false);
 
   // Breastfeeding state
   const [bfDuration, setBfDuration] = useState('');
@@ -125,7 +130,7 @@ Erkenne:
 Antworte NUR mit diesem JSON-Format, ohne Markdown:
 {
   "title": "Bezeichnung der Mahlzeit",
-  "ingredients": ["Zutat1", "Zutat2"],
+  "ingredients": [{"name": "Zutat1", "amount_g": 50}, {"name": "Zutat2", "amount_g": 30}],
   "calories": 0,
   "protein": 0,
   "carbs": 0,
@@ -134,16 +139,24 @@ Antworte NUR mit diesem JSON-Format, ohne Markdown:
   "fiber": 0,
   "summary": "Kurze Bewertung der Mahlzeit (1 Satz)",
   "allergens": ["nur wenn Allergene erkannt wurden"]
-}`;
+}
+Wichtig: Bei "ingredients" gib für jede Zutat den Namen und die geschätzte Menge in Gramm (amount_g) für eine Kinderportion an.`;
 
     try {
       const response = await analyzeImageWithGemini(base64Image, prompt);
       const cleaned = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       const parsed = JSON.parse(cleaned);
 
+      // Normalize ingredients: support both old string[] and new {name, amount_g}[] format
+      const rawIngredients = parsed.ingredients || [];
+      const ingredients = rawIngredients.map(ing =>
+        typeof ing === 'string' ? { name: ing, amount_g: null } : { name: ing.name, amount_g: ing.amount_g || null }
+      );
+
       const result = {
         title: parsed.title || 'Mahlzeit',
-        ingredients: parsed.ingredients || [],
+        ingredients,
+        ingredientNames: ingredients.map(i => i.name),
         calories: parsed.calories || 0,
         protein: parsed.protein || 0,
         carbs: parsed.carbs || 0,
@@ -170,6 +183,11 @@ Antworte NUR mit diesem JSON-Format, ohne Markdown:
       if (result.title && result.title !== 'Mahlzeit') {
         runOffSearch(result.title);
       }
+
+      // Auto-validate nutrition values by searching each ingredient in OFF
+      if (ingredients.length > 0) {
+        runNutritionValidation(result, ingredients);
+      }
     } catch (err) {
       console.error('Gemini analysis failed:', err);
       setIsAnalyzing(false);
@@ -189,6 +207,37 @@ Antworte NUR mit diesem JSON-Format, ohne Markdown:
       console.error('OFF search failed:', err);
     } finally {
       setOffSearching(false);
+    }
+  };
+
+  // --- Nutrition validation via OFF ingredient lookup ---
+  const runNutritionValidation = async (geminiResult, ingredients) => {
+    setIsValidating(true);
+    try {
+      const validation = await validateNutritionByIngredients(ingredients, {
+        calories: geminiResult.calories,
+        protein: geminiResult.protein,
+        carbs: geminiResult.carbs,
+        fat: geminiResult.fat,
+        sugar: geminiResult.sugar,
+        fiber: geminiResult.fiber,
+      });
+      setValidationResult(validation);
+
+      // Auto-apply corrected values if OFF had enough data
+      if (validation.corrected && validation.matched >= 2) {
+        const c = validation.offNutrition;
+        if (c.calories != null) setEditCalories(String(c.calories));
+        if (c.protein != null) setEditProtein(String(c.protein));
+        if (c.carbs != null) setEditCarbs(String(c.carbs));
+        if (c.fat != null) setEditFat(String(c.fat));
+        if (c.sugar != null) setEditSugar(String(c.sugar));
+        if (c.fiber != null) setEditFiber(String(c.fiber));
+      }
+    } catch (err) {
+      console.error('Nutrition validation failed:', err);
+    } finally {
+      setIsValidating(false);
     }
   };
 
@@ -226,7 +275,7 @@ Antworte NUR mit diesem JSON-Format, ohne Markdown:
       imageUrl: imagePreview,
       title: title || analysis?.title || 'Mahlzeit',
       summary: analysis?.summary || '',
-      ingredients: analysis?.ingredients || [],
+      ingredients: analysis?.ingredientNames || analysis?.ingredients?.map(i => typeof i === 'string' ? i : i.name) || [],
       calories: parseFloat(editCalories) || 0,
       protein: parseFloat(editProtein) || 0,
       carbs: parseFloat(editCarbs) || 0,
@@ -235,7 +284,9 @@ Antworte NUR mit diesem JSON-Format, ohne Markdown:
       fiber: parseFloat(editFiber) || null,
       allergens,
       notes,
-      dataSource: offProduct ? 'gemini+openfoodfacts' : 'gemini',
+      dataSource: validationResult?.corrected ? 'gemini+off-validiert' : offProduct ? 'gemini+openfoodfacts' : 'gemini',
+      nutritionValidated: !!validationResult,
+      nutritionCorrected: validationResult?.corrected || false,
       offProductName: offProduct?.name || null,
       offBrand: offProduct?.brand || null,
       nutriscoreGrade: offProduct?.nutriscoreGrade || null,
@@ -388,7 +439,7 @@ Antworte NUR mit diesem JSON-Format, ohne Markdown:
             <div className="text-center">
               <h3 className="font-semibold text-gray-800">Analyse läuft...</h3>
               <p className="text-sm text-gray-500 mt-1">
-                KI erkennt Zutaten und Nährstoffe
+                KI erkennt Zutaten und gleicht Nährwerte ab
               </p>
             </div>
           </div>
@@ -419,7 +470,60 @@ Antworte NUR mit diesem JSON-Format, ohne Markdown:
                 </span>
               </div>
             )}
+            {isValidating && (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 rounded-full">
+                <Loader2 className="w-3.5 h-3.5 text-blue-500 animate-spin" />
+                <span className="text-xs font-medium text-blue-600">Werte werden abgeglichen...</span>
+              </div>
+            )}
+            {validationResult && !isValidating && (
+              <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full ${
+                validationResult.corrected ? 'bg-amber-50' : 'bg-green-50'
+              }`}>
+                {validationResult.corrected ? (
+                  <>
+                    <ArrowRightLeft className="w-3.5 h-3.5 text-amber-600" />
+                    <span className="text-xs font-medium text-amber-700">
+                      Werte korrigiert ({validationResult.matched}/{validationResult.total} Zutaten)
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck className="w-3.5 h-3.5 text-green-600" />
+                    <span className="text-xs font-medium text-green-700">
+                      Werte bestätigt ({validationResult.matched}/{validationResult.total} Zutaten)
+                    </span>
+                  </>
+                )}
+              </div>
+            )}
           </div>
+
+          {/* Validation details - show corrections */}
+          {validationResult?.corrected && validationResult.corrections.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Info className="w-4 h-4 text-amber-600" />
+                <h3 className="text-sm font-semibold text-amber-800">Nährwerte angepasst</h3>
+              </div>
+              <p className="text-xs text-amber-700 mb-2">
+                Die KI-Schätzung wurde anhand von Open Food Facts Daten korrigiert:
+              </p>
+              <div className="space-y-1">
+                {validationResult.corrections.map((c, i) => (
+                  <div key={i} className="flex items-center justify-between text-xs">
+                    <span className="text-amber-800 font-medium">{c.label}</span>
+                    <span className="text-amber-600">
+                      <span className="line-through opacity-60">{c.aiValue}</span>
+                      {' → '}
+                      <span className="font-semibold">{c.offValue}</span>
+                      <span className="ml-1 opacity-50">({c.deviation}% Abw.)</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Title */}
           <div>
@@ -579,11 +683,25 @@ Antworte NUR mit diesem JSON-Format, ohne Markdown:
             <div>
               <h3 className="text-sm font-medium text-gray-700 mb-2">Erkannte Zutaten</h3>
               <div className="flex flex-wrap gap-1.5">
-                {analysis.ingredients.map((ing, i) => (
-                  <span key={i} className="px-3 py-1 rounded-full text-xs font-medium bg-sage-50 text-sage-700">
-                    {ing}
-                  </span>
-                ))}
+                {analysis.ingredients.map((ing, i) => {
+                  const name = typeof ing === 'string' ? ing : ing.name;
+                  const weight = typeof ing === 'object' ? ing.amount_g : null;
+                  const detail = validationResult?.details?.find(d => d.name === name);
+                  return (
+                    <span
+                      key={i}
+                      className={`px-3 py-1 rounded-full text-xs font-medium ${
+                        detail?.matched
+                          ? 'bg-green-50 text-green-700 ring-1 ring-green-200'
+                          : 'bg-sage-50 text-sage-700'
+                      }`}
+                      title={detail?.matched ? `OFF: ${detail.product}${detail.brand ? ` (${detail.brand})` : ''}` : 'Nicht in OFF gefunden'}
+                    >
+                      {name}{weight ? ` ~${weight}g` : ''}
+                      {detail?.matched && <ShieldCheck className="w-3 h-3 inline ml-1 -mt-0.5" />}
+                    </span>
+                  );
+                })}
               </div>
             </div>
           )}
