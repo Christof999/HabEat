@@ -35,9 +35,9 @@ export default function OnboardingSummary({ children, onAddAnother, onComplete, 
                 {child.height && ` · ${child.height} cm`}
                 {child.weight && ` · ${child.weight} kg`}
               </p>
-              {child.knownAllergies.length > 0 && (
+              {(child.knownAllergies || child.allergies || []).length > 0 && (
                 <div className="flex flex-wrap gap-1 mt-1.5">
-                  {child.knownAllergies.map(a => (
+                  {(child.knownAllergies || child.allergies || []).map(a => (
                     <span
                       key={a}
                       className="px-2 py-0.5 rounded-full text-xs font-medium bg-rose-50 text-rose-600"

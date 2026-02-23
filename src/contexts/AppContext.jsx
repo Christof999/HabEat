@@ -19,9 +19,12 @@ const initialState = {
 };
 
 function normalizeChild(child) {
-  const safeName = typeof child?.name === 'string' && child.name.trim().length > 0
-    ? child.name.trim()
-    : 'Unbekannt';
+  if (!child || typeof child !== 'object') return null;
+
+  const safeId = typeof child.id === 'string' ? child.id.trim() : '';
+  const safeName = typeof child.name === 'string' ? child.name.trim() : '';
+
+  if (!safeId || !safeName) return null;
 
   const knownAllergies = Array.isArray(child?.knownAllergies)
     ? child.knownAllergies
@@ -31,10 +34,16 @@ function normalizeChild(child) {
 
   return {
     ...child,
+    id: safeId,
     name: safeName,
     knownAllergies,
     allergies: knownAllergies,
   };
+}
+
+function normalizeChildrenList(children) {
+  if (!Array.isArray(children)) return [];
+  return children.map(normalizeChild).filter(Boolean);
 }
 
 function appReducer(state, action) {
@@ -53,6 +62,7 @@ function appReducer(state, action) {
       return { ...state, onboardingComplete: true };
 
     case 'ADD_CHILD':
+      if (!normalizeChild(action.payload)) return state;
       return {
         ...state,
         children: [...state.children, normalizeChild(action.payload)],
@@ -109,16 +119,39 @@ function appReducer(state, action) {
       };
 
     case 'LOAD_STATE':
-      return {
-        ...state,
-        ...action.payload,
-        children: Array.isArray(action.payload?.children)
-          ? action.payload.children.map(normalizeChild)
-          : state.children,
-      };
+      {
+        const children = normalizeChildrenList(action.payload?.children);
+        const activeChildId = children.some(c => c.id === action.payload?.activeChildId)
+          ? action.payload?.activeChildId
+          : children[0]?.id || null;
+
+        return {
+          ...state,
+          ...action.payload,
+          children,
+          activeChildId,
+        };
+      }
 
     case 'SYNC_FIRESTORE':
-      return { ...state, ...action.payload, firestoreReady: true };
+      {
+        if (Object.prototype.hasOwnProperty.call(action.payload || {}, 'children')) {
+          const children = normalizeChildrenList(action.payload.children);
+          const activeChildId = children.some(c => c.id === state.activeChildId)
+            ? state.activeChildId
+            : children[0]?.id || null;
+
+          return {
+            ...state,
+            ...action.payload,
+            children,
+            activeChildId,
+            firestoreReady: true,
+          };
+        }
+
+        return { ...state, ...action.payload, firestoreReady: true };
+      }
 
     case 'RESET':
       return initialState;
@@ -167,7 +200,13 @@ export function AppProvider({ children: reactChildren }) {
     const saved = localStorage.getItem('habeat-state');
     if (saved) {
       try {
-        return { ...init, ...JSON.parse(saved) };
+        const parsed = JSON.parse(saved);
+        const children = normalizeChildrenList(parsed.children);
+        const activeChildId = children.some(c => c.id === parsed.activeChildId)
+          ? parsed.activeChildId
+          : children[0]?.id || null;
+
+        return { ...init, ...parsed, children, activeChildId };
       } catch {
         return init;
       }
@@ -207,7 +246,7 @@ export function AppProvider({ children: reactChildren }) {
         case 'children':
           rawDispatch({
             type: 'SYNC_FIRESTORE',
-            payload: { children: Array.isArray(data) ? data.map(normalizeChild) : [] },
+            payload: { children: normalizeChildrenList(data) },
           });
           break;
         case 'meals':

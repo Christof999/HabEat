@@ -37,6 +37,45 @@ export default function TrackingPage() {
     return data;
   };
 
+  const handleQuickMeal = (type) => {
+    const quickMeals = {
+      breastfeeding: {
+        title: 'Stillen',
+        ingredients: ['Muttermilch'],
+        calories: 90,
+        protein: 1,
+        carbs: 7,
+        fat: 5,
+        summary: 'Manuell erfasste Stillmahlzeit.',
+      },
+      pre: {
+        title: 'Pre-Nahrung',
+        ingredients: ['Pre-Nahrung'],
+        calories: 100,
+        protein: 2,
+        carbs: 10,
+        fat: 4,
+        summary: 'Manuell erfasste Pre-Nahrungsmahlzeit.',
+      },
+    };
+
+    const meal = quickMeals[type];
+    if (!meal) return;
+
+    setImagePreview(null);
+    setAnalyzeError(null);
+    setAnalysis({
+      ...meal,
+      allergens: [],
+      confidence: null,
+      flags: [],
+      original: null,
+      openFoodFacts: null,
+    });
+    setTitle(meal.title);
+    setStep('review');
+  };
+
   const handleCapture = (source) => {
     if (source === 'camera') {
       fileInputRef.current.setAttribute('capture', 'environment');
@@ -176,6 +215,21 @@ export default function TrackingPage() {
               <p className="text-sm text-gray-500">Ein vorhandenes Foto auswählen</p>
             </div>
           </button>
+
+          <div className="grid grid-cols-2 gap-3 pt-2">
+            <button
+              onClick={() => handleQuickMeal('breastfeeding')}
+              className="bg-white rounded-xl px-4 py-3 text-sm font-medium text-gray-700 shadow-sm hover:shadow-md transition cursor-pointer"
+            >
+              Stillen erfassen
+            </button>
+            <button
+              onClick={() => handleQuickMeal('pre')}
+              className="bg-white rounded-xl px-4 py-3 text-sm font-medium text-gray-700 shadow-sm hover:shadow-md transition cursor-pointer"
+            >
+              Pre-Nahrung erfassen
+            </button>
+          </div>
         </div>
       )}
 

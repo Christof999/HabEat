@@ -6,7 +6,7 @@ export default function ChildProfiles({ onAddChild }) {
 
   return (
     <div className="py-4">
-      <div className="flex items-center gap-4 overflow-x-auto scrollbar-hide pb-2 px-6">
+      <div className="flex items-center gap-4 overflow-x-auto overflow-y-visible scrollbar-hide pt-2 pb-3 px-6">
         {state.children.map(child => {
           const isActive = child.id === state.activeChildId;
           return (

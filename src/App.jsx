@@ -9,6 +9,8 @@ import HistoryPage from './pages/HistoryPage';
 import DetectivePage from './pages/DetectivePage';
 import EmergencyPage from './pages/EmergencyPage';
 import SettingsPage from './pages/SettingsPage';
+import AddChildPage from './pages/AddChildPage';
+import EditChildPage from './pages/EditChildPage';
 
 function App() {
   const { state } = useApp();
@@ -29,6 +31,8 @@ function App() {
         <Route path="/detective" element={<DetectivePage />} />
         <Route path="/emergency" element={<EmergencyPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/settings/add-child" element={<AddChildPage />} />
+        <Route path="/settings/edit-child/:childId" element={<EditChildPage />} />
       </Route>
       <Route path="/track" element={<TrackingPage />} />
     </Routes>

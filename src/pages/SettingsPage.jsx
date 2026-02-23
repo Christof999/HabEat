@@ -1,8 +1,10 @@
 import { User, Baby, Bell, FileText, Trash2, ChevronRight, LogOut, Info, Shield } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext';
 
 export default function SettingsPage() {
   const { state, dispatch } = useApp();
+  const navigate = useNavigate();
 
   const handleLogout = () => {
     dispatch({ type: 'LOGOUT' });
@@ -22,9 +24,15 @@ export default function SettingsPage() {
           icon: Baby,
           label: child.name,
           sublabel: `${(child.knownAllergies || child.allergies || []).length} Allergien`,
-          action: () => {},
+          action: () => navigate(`/settings/edit-child/${child.id}`),
           avatarColor: child.avatarColor,
         })),
+        {
+          icon: Baby,
+          label: 'Kind hinzufügen',
+          sublabel: 'Neues Profil anlegen',
+          action: () => navigate('/settings/add-child'),
+        },
       ],
     },
     {

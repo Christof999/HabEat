@@ -11,14 +11,28 @@ const avatarColors = [
   'bg-sage-300', 'bg-sky-300', 'bg-warm-300', 'bg-rose-300',
 ];
 
-export default function AddChildForm({ onAdd, onBack, childIndex = 0 }) {
+export default function AddChildForm({
+  onAdd,
+  onBack,
+  childIndex = 0,
+  initialChild = null,
+  title = 'Kind hinzufügen',
+  subtitle = 'Erzähle uns von deinem Kind',
+  submitLabel = 'Kind hinzufügen',
+}) {
+  const initialKnownAllergies = Array.isArray(initialChild?.knownAllergies)
+    ? initialChild.knownAllergies
+    : Array.isArray(initialChild?.allergies)
+      ? initialChild.allergies
+      : [];
+
   const [form, setForm] = useState({
-    name: '',
-    birthDate: '',
-    height: '',
-    weight: '',
-    knownAllergies: [],
-    avatarColor: avatarColors[childIndex % avatarColors.length],
+    name: initialChild?.name || '',
+    birthDate: initialChild?.birthDate || '',
+    height: initialChild?.height ?? '',
+    weight: initialChild?.weight ?? '',
+    knownAllergies: initialKnownAllergies,
+    avatarColor: initialChild?.avatarColor || avatarColors[childIndex % avatarColors.length],
   });
   const [customAllergen, setCustomAllergen] = useState('');
   const [errors, setErrors] = useState({});
@@ -66,10 +80,11 @@ export default function AddChildForm({ onAdd, onBack, childIndex = 0 }) {
     }
     onAdd({
       ...form,
-      id: crypto.randomUUID(),
+      id: initialChild?.id || crypto.randomUUID(),
       height: form.height ? parseFloat(form.height) : null,
       weight: form.weight ? parseFloat(form.weight) : null,
-      createdAt: new Date().toISOString(),
+      createdAt: initialChild?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     });
   };
 
@@ -84,8 +99,8 @@ export default function AddChildForm({ onAdd, onBack, childIndex = 0 }) {
           <ArrowLeft className="w-5 h-5 text-gray-600" />
         </button>
         <div>
-          <h2 className="font-bold text-lg text-gray-800">Kind hinzufügen</h2>
-          <p className="text-sm text-gray-500">Erzähle uns von deinem Kind</p>
+          <h2 className="font-bold text-lg text-gray-800">{title}</h2>
+          <p className="text-sm text-gray-500">{subtitle}</p>
         </div>
       </div>
 
@@ -95,7 +110,7 @@ export default function AddChildForm({ onAdd, onBack, childIndex = 0 }) {
           <div className={`w-20 h-20 rounded-full ${form.avatarColor} flex items-center justify-center shadow-sm`}>
             {form.name ? (
               <span className="text-2xl font-bold text-gray-700">
-                {form.name.charAt(0).toUpperCase()}
+                {(form.name?.trim()?.[0] || '?').toUpperCase()}
               </span>
             ) : (
               <User className="w-8 h-8 text-gray-400" />
@@ -255,7 +270,7 @@ export default function AddChildForm({ onAdd, onBack, childIndex = 0 }) {
             type="submit"
             className="w-full bg-sage-500 hover:bg-sage-600 text-white font-semibold py-4 rounded-2xl transition-colors flex items-center justify-center gap-2 shadow-sm cursor-pointer"
           >
-            Kind hinzufügen
+            {submitLabel}
             <ArrowRight className="w-5 h-5" />
           </button>
         </div>
