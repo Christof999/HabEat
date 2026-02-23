@@ -87,6 +87,7 @@ export default function TrackingPage() {
 
   const aiIngredientNames = getAiIngredientNames(analysis);
   const detailedOffIngredients = offProduct?.ingredientList || [];
+  const hasDetailedOffIngredients = detailedOffIngredients.length >= 3;
 
   // Re-analyze allergens when notes change
   useEffect(() => {
@@ -281,7 +282,7 @@ Wichtig: Bei "ingredients" gib für jede Zutat den Namen und die geschätzte Men
 
   // --- Save handlers ---
   const handleSave = () => {
-    const finalIngredients = detailedOffIngredients.length > 0
+    const finalIngredients = hasDetailedOffIngredients
       ? detailedOffIngredients
       : aiIngredientNames;
 
@@ -295,7 +296,7 @@ Wichtig: Bei "ingredients" gib für jede Zutat den Namen und die geschätzte Men
       summary: analysis?.summary || '',
       ingredients: finalIngredients,
       aiIngredients: aiIngredientNames,
-      ingredientsSource: detailedOffIngredients.length > 0 ? 'openfoodfacts' : 'gemini',
+      ingredientsSource: hasDetailedOffIngredients ? 'openfoodfacts' : 'gemini',
       offIngredientsText: offProduct?.ingredients || null,
       calories: parseFloat(editCalories) || 0,
       protein: parseFloat(editProtein) || 0,
@@ -700,16 +701,16 @@ Wichtig: Bei "ingredients" gib für jede Zutat den Namen und die geschätzte Men
           )}
 
           {/* Ingredients */}
-          {(analysis.ingredients.length > 0 || detailedOffIngredients.length > 0) && (
+          {(analysis.ingredients.length > 0 || hasDetailedOffIngredients) && (
             <div>
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-sm font-medium text-gray-700">Erkannte Zutaten</h3>
-                {detailedOffIngredients.length > 0 && (
+                {hasDetailedOffIngredients && (
                   <span className="text-xs text-orange-600 font-medium">detailliert aus Open Food Facts</span>
                 )}
               </div>
 
-              {detailedOffIngredients.length > 0 ? (
+              {hasDetailedOffIngredients ? (
                 <div className="flex flex-wrap gap-1.5">
                   {detailedOffIngredients.map((ingredient, i) => (
                     <span
