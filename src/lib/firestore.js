@@ -37,7 +37,7 @@ export async function saveChild(username, child) {
 }
 
 export async function updateChild(username, partialChild) {
-  const { photoUrl, ...fields } = partialChild;
+  const { photoUrl: _photoUrl, ...fields } = partialChild;
   await setDoc(doc(childrenCol(username), partialChild.id), fields, { merge: true });
 }
 
@@ -55,13 +55,13 @@ export async function saveMeal(username, meal) {
 }
 
 export async function updateMeal(username, partialMeal) {
-  const { imageUrl, afterImageUrl, ...fields } = partialMeal;
+  const { imageUrl: _imageUrl, afterImageUrl: _afterImageUrl, ...fields } = partialMeal;
   await setDoc(doc(mealsCol(username), partialMeal.id), fields, { merge: true });
 }
 
 // --- Symptoms ---
 export async function saveSymptom(username, symptom) {
-  const { photoUrl, ...fields } = symptom;
+  const { photoUrl: _photoUrl, ...fields } = symptom;
   await setDoc(doc(symptomsCol(username), symptom.id), {
     ...fields,
     photoUrl: null, // Don't store base64 in Firestore — use Storage instead

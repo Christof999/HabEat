@@ -59,11 +59,11 @@ export default function SymptomHistoryPage() {
   }, [childSymptoms]);
 
   // Auto-expand today and yesterday
-  const today = new Date().toDateString();
-  const yesterday = new Date(Date.now() - 86400000).toDateString();
-
-  const isExpanded = (dateStr) =>
-    expandedDays.has(dateStr) || dateStr === today || dateStr === yesterday;
+  const now = new Date();
+  const today = now.toDateString();
+  const yesterdayDate = new Date(now);
+  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+  const yesterday = yesterdayDate.toDateString();
 
   const toggleDay = (dateStr) => {
     setExpandedDays(prev => {

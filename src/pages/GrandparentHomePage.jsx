@@ -4,7 +4,7 @@ import { useApp } from '../contexts/AppContext';
 import ChildProfiles from '../components/home/ChildProfiles';
 
 export default function GrandparentHomePage() {
-  const { state, activeChild } = useApp();
+  const { activeChild } = useApp();
   const navigate = useNavigate();
 
   const greeting = () => {

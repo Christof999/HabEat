@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Search, ShieldCheck, AlertTriangle, TrendingUp, Sparkles,
@@ -43,10 +43,6 @@ export default function DetectivePage() {
     () => analyzeCorrelations(childMeals, childSymptoms),
     [childMeals, childSymptoms]
   );
-
-  const recentSymptoms = childSymptoms
-    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-    .slice(0, 5);
 
   const runAiAnalysis = useCallback(async () => {
     if (!activeChild || childMeals.length === 0 || childSymptoms.length === 0) return;

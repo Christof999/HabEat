@@ -248,7 +248,11 @@ export function AppProvider({ children: reactChildren }) {
   const firestoreListening = useRef(false);
   const seededRef = useRef(false);
   const stateRef = useRef(state);
-  stateRef.current = state;
+
+  // Keep a mutable reference to latest state for async callbacks.
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   // Wrapped dispatch that also syncs to Firestore
   const dispatch = useCallback((action) => {
@@ -342,7 +346,7 @@ export function AppProvider({ children: reactChildren }) {
             });
           }
           break;
-        case 'meals':
+        case 'meals': {
           if (data.length === 0 && current.meals.length > 0) return;
           // Preserve local imageUrl (not stored in Firestore, base64 too large)
           const firestoreMealIds = new Set(data.map(m => m.id));
@@ -364,7 +368,8 @@ export function AppProvider({ children: reactChildren }) {
             payload: { meals: [...localOnlyMeals, ...mergedMeals] },
           });
           break;
-        case 'symptoms':
+        }
+        case 'symptoms': {
           if (data.length === 0 && current.symptoms.length > 0) return;
           // Preserve local photoUrl (base64) and merge with Firestore photoStorageUrl
           const mergedSymptoms = data.map(fsSymptom => {
@@ -376,6 +381,7 @@ export function AppProvider({ children: reactChildren }) {
           });
           rawDispatch({ type: 'SYNC_FIRESTORE', payload: { symptoms: mergedSymptoms } });
           break;
+        }
         case 'growth':
           if (data.length === 0 && (current.growthEntries || []).length > 0) return;
           rawDispatch({ type: 'SYNC_FIRESTORE', payload: { growthEntries: data } });
@@ -398,6 +404,7 @@ export function AppProvider({ children: reactChildren }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useApp() {
   const context = useContext(AppContext);
   if (!context) {

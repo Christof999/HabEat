@@ -109,12 +109,12 @@ export function analyzeCorrelations(meals, symptoms) {
     }));
 
   // Generate insights
-  const insights = generateInsights(suspects, symptoms, foodMeals);
+  const insights = generateInsights(suspects, symptoms);
 
   return { suspects, insights, hasData: true };
 }
 
-function generateInsights(suspects, symptoms, meals) {
+function generateInsights(suspects, symptoms) {
   const insights = [];
 
   // Insight: Top suspect pattern

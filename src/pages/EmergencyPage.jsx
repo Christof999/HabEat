@@ -10,7 +10,7 @@ const DEFAULT_CONTACTS = [
   { id: '__giftnotruf', name: 'Giftnotruf', phone: '030 19240', type: 'poison', isDefault: true },
 ];
 
-function ContactCard({ contact, onCall, onEdit, onDelete }) {
+function ContactCard({ contact, onEdit, onDelete }) {
   const iconBg = contact.type === 'emergency' ? 'bg-rose-100'
     : contact.type === 'poison' ? 'bg-warm-100'
     : 'bg-sage-100';
