@@ -34,6 +34,48 @@ function getSexLabel(sex) {
   return null;
 }
 
+function getPercentileCategory(percentile) {
+  if (percentile == null) return null;
+  if (percentile < 3) {
+    return {
+      shortLabel: 'deutlich unterer Bereich',
+      detailLabel: 'deutlich unter dem alters- und geschlechtsbezogenen Vergleichsbereich',
+      textClass: 'text-rose-700',
+      dotClass: 'bg-rose-400',
+    };
+  }
+  if (percentile < 10) {
+    return {
+      shortLabel: 'unterer Bereich',
+      detailLabel: 'im unteren alters- und geschlechtsbezogenen Vergleichsbereich',
+      textClass: 'text-warm-700',
+      dotClass: 'bg-warm-400',
+    };
+  }
+  if (percentile <= 90) {
+    return {
+      shortLabel: 'typischer Bereich',
+      detailLabel: 'im typischen alters- und geschlechtsbezogenen Vergleichsbereich',
+      textClass: 'text-sage-700',
+      dotClass: 'bg-sage-500',
+    };
+  }
+  if (percentile <= 97) {
+    return {
+      shortLabel: 'oberer Bereich',
+      detailLabel: 'im oberen alters- und geschlechtsbezogenen Vergleichsbereich',
+      textClass: 'text-warm-700',
+      dotClass: 'bg-warm-400',
+    };
+  }
+  return {
+    shortLabel: 'deutlich oberer Bereich',
+    detailLabel: 'deutlich ueber dem alters- und geschlechtsbezogenen Vergleichsbereich',
+    textClass: 'text-rose-700',
+    dotClass: 'bg-rose-400',
+  };
+}
+
 function getWeightAlert(entries, childId) {
   const childEntries = entries
     .filter(e => e.childId === childId && e.weight)
@@ -166,6 +208,8 @@ function AddGrowthModal({ child, onSave, onClose }) {
   });
 
   const hasPercentileContext = !!child.birthDate && !!child.sex;
+  const previewHeightCategory = getPercentileCategory(percentilePreview.height);
+  const previewWeightCategory = getPercentileCategory(percentilePreview.weight);
 
   useEffect(() => {
     let active = true;
@@ -271,9 +315,27 @@ function AddGrowthModal({ child, onSave, onClose }) {
         {hasPercentileContext && (height || weight) && (
           <div className="bg-sky-50 border border-sky-200 rounded-xl p-3">
             <p className="text-xs font-semibold text-sky-800 mb-1">Perzentilen-Vorschau</p>
-            <div className="flex items-center gap-3 text-xs text-sky-700">
-              {height && <span>Groesse: {formatPercentile(percentilePreview.height)}</span>}
-              {weight && <span>Gewicht: {formatPercentile(percentilePreview.weight)}</span>}
+            <div className="space-y-1 text-xs text-sky-700">
+              {height && (
+                <p>
+                  Groesse: {formatPercentile(percentilePreview.height)}
+                  {previewHeightCategory && (
+                    <span className={`ml-1 ${previewHeightCategory.textClass}`}>
+                      ({previewHeightCategory.shortLabel})
+                    </span>
+                  )}
+                </p>
+              )}
+              {weight && (
+                <p>
+                  Gewicht: {formatPercentile(percentilePreview.weight)}
+                  {previewWeightCategory && (
+                    <span className={`ml-1 ${previewWeightCategory.textClass}`}>
+                      ({previewWeightCategory.shortLabel})
+                    </span>
+                  )}
+                </p>
+              )}
             </div>
           </div>
         )}
@@ -371,6 +433,9 @@ export default function MyChildPage() {
   const childHasPercentileContext = !!child.birthDate && !!child.sex;
   const bmi = calculateBMI(child.weight, child.height);
   const age = calculateAge(child.birthDate);
+  const heightPercentileCategory = getPercentileCategory(currentPercentiles.height);
+  const weightPercentileCategory = getPercentileCategory(currentPercentiles.weight);
+  const hasAnyPercentile = currentPercentiles.height != null || currentPercentiles.weight != null;
 
   const latestWithWeight = childEntries.find(e => e.weight);
   const previousWithWeight = childEntries.filter(e => e.weight)[1];
@@ -502,8 +567,8 @@ export default function MyChildPage() {
             <p className="text-lg font-bold text-gray-800">{child.height || '\u2014'}</p>
             <p className="text-[11px] text-gray-400">cm</p>
             {childHasPercentileContext && currentPercentiles.height != null && (
-              <p className="text-[10px] text-sky-600 mt-1 font-medium">
-                {formatPercentile(currentPercentiles.height)}
+              <p className={`text-[10px] mt-1 font-medium ${heightPercentileCategory?.textClass || 'text-sky-600'}`}>
+                {formatPercentile(currentPercentiles.height)} {heightPercentileCategory ? `(${heightPercentileCategory.shortLabel})` : ''}
               </p>
             )}
             {heightTrend !== null && (
@@ -518,8 +583,8 @@ export default function MyChildPage() {
             <p className="text-lg font-bold text-gray-800">{child.weight || '\u2014'}</p>
             <p className="text-[11px] text-gray-400">kg</p>
             {childHasPercentileContext && currentPercentiles.weight != null && (
-              <p className="text-[10px] text-sky-600 mt-1 font-medium">
-                {formatPercentile(currentPercentiles.weight)}
+              <p className={`text-[10px] mt-1 font-medium ${weightPercentileCategory?.textClass || 'text-sky-600'}`}>
+                {formatPercentile(currentPercentiles.weight)} {weightPercentileCategory ? `(${weightPercentileCategory.shortLabel})` : ''}
               </p>
             )}
             {weightTrend !== null && (
@@ -535,6 +600,38 @@ export default function MyChildPage() {
             <p className="text-[11px] text-gray-400">BMI</p>
           </div>
         </div>
+
+        {childHasPercentileContext && hasAnyPercentile && (
+          <div className="bg-sky-50 border border-sky-200 rounded-2xl p-4">
+            <p className="text-xs font-semibold text-sky-800 uppercase tracking-wide mb-2">
+              Einordnung der Perzentilen
+            </p>
+            <div className="space-y-1.5">
+              {currentPercentiles.height != null && (
+                <div className="flex items-start gap-2">
+                  <span className={`w-2 h-2 rounded-full mt-1.5 ${heightPercentileCategory?.dotClass || 'bg-sky-400'}`} />
+                  <p className="text-xs text-sky-900">
+                    <span className="font-semibold">Groesse ({formatPercentile(currentPercentiles.height)}): </span>
+                    {heightPercentileCategory?.detailLabel}
+                  </p>
+                </div>
+              )}
+              {currentPercentiles.weight != null && (
+                <div className="flex items-start gap-2">
+                  <span className={`w-2 h-2 rounded-full mt-1.5 ${weightPercentileCategory?.dotClass || 'bg-sky-400'}`} />
+                  <p className="text-xs text-sky-900">
+                    <span className="font-semibold">Gewicht ({formatPercentile(currentPercentiles.weight)}): </span>
+                    {weightPercentileCategory?.detailLabel}
+                  </p>
+                </div>
+              )}
+            </div>
+            <p className="text-[11px] text-sky-700 mt-2">
+              Perzentilen sind eine Orientierung und keine Diagnose. Wichtiger als ein Einzelwert ist der Verlauf ueber
+              mehrere Messungen. Bei Unsicherheit bitte mit eurem Kinderarzt sprechen.
+            </p>
+          </div>
+        )}
 
         {/* Growth Charts */}
         <GrowthChart
