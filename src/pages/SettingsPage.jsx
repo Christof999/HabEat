@@ -7,7 +7,6 @@ import { QRCodeSVG } from 'qrcode.react';
 import { useApp } from '../contexts/AppContext';
 import { deleteAllUserData } from '../lib/firestore';
 import { analyzeCorrelations } from '../lib/detectiveEngine';
-import { generatePdfReport } from '../lib/pdfReport';
 import EditChildModal from '../components/settings/EditChildModal';
 
 export default function SettingsPage() {
@@ -50,6 +49,7 @@ export default function SettingsPage() {
     if (!activeChild || exporting) return;
     setExporting(true);
     try {
+      const { generatePdfReport } = await import('../lib/pdfReport');
       const childMeals = state.meals.filter(m => m.childId === activeChild.id);
       const childSymptoms = state.symptoms.filter(s => s.childId === activeChild.id);
       const correlation = analyzeCorrelations(childMeals, childSymptoms);
