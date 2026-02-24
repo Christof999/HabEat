@@ -12,6 +12,8 @@ const MIN_MATCH_SCORE = 25;
 const OFF_MAX_RETRIES = 3;
 const LOOKUP_CONCURRENCY = 3;
 const OFF_REQUEST_TIMEOUT_MS = 30000;
+const SEARCH_CACHE_TTL_MS = 5 * 60 * 1000;
+const SEARCH_CACHE = new Map();
 
 const FIELDS = [
   'product_name', 'product_name_de', 'brands', 'image_front_small_url',
@@ -26,9 +28,7 @@ const FIELDS = [
  */
 export async function fetchProductByBarcode(barcode) {
   const url = `${BASE_URL}/api/v2/product/${encodeURIComponent(barcode)}?fields=${FIELDS}`;
-  const res = await fetch(url, {
-    headers: { 'User-Agent': USER_AGENT },
-  });
+  const res = await fetch(url, { headers: getRequestHeaders() });
   if (!res.ok) return { found: false, product: null };
   const data = await res.json();
   if (data.status !== 1) return { found: false, product: null };
@@ -42,22 +42,87 @@ export async function fetchProductByBarcode(barcode) {
  * @returns {Promise<Array>} normalized product results
  */
 export async function searchProducts(query, pageSize = 10) {
-  const params = new URLSearchParams({
-    search_terms: query,
-    search_simple: '1',
-    action: 'process',
-    json: '1',
-    page_size: String(pageSize),
-    fields: FIELDS,
-    lc: 'de',
+  const normalizedQuery = (query || '').trim();
+  if (normalizedQuery.length < 2) return [];
+
+  const cacheKey = `${normalizedQuery.toLowerCase()}::${pageSize}`;
+  const cached = SEARCH_CACHE.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.results;
+  }
+
+  const variants = buildSearchVariants(normalizedQuery);
+  let mergedResults = [];
+
+  for (const variant of variants) {
+    const germanResults = await querySearch(variant, pageSize, 'de');
+    mergedResults = mergeUniqueProducts(mergedResults, germanResults, pageSize);
+
+    // Fallback without locale constraint (helps when OFF has only non-de metadata)
+    if (mergedResults.length < Math.min(3, pageSize)) {
+      const intlResults = await querySearch(variant, pageSize, null);
+      mergedResults = mergeUniqueProducts(mergedResults, intlResults, pageSize);
+    }
+
+    if (mergedResults.length >= pageSize) break;
+  }
+
+  SEARCH_CACHE.set(cacheKey, {
+    results: mergedResults,
+    expiresAt: Date.now() + SEARCH_CACHE_TTL_MS,
   });
-  const url = `${BASE_URL}/cgi/search.pl?${params}`;
-  const res = await fetchWithRetry(url, {
-    headers: { 'User-Agent': USER_AGENT },
-  });
-  if (!res.ok) return [];
-  const data = await res.json();
-  return (data.products || []).map(normalizeProduct);
+
+  return mergedResults;
+}
+
+function getRequestHeaders() {
+  const headers = { Accept: 'application/json' };
+  // Browsers block custom "User-Agent" headers; only send it in server/runtime environments.
+  if (typeof window === 'undefined') {
+    headers['User-Agent'] = USER_AGENT;
+  }
+  return headers;
+}
+
+async function querySearch(searchTerm, pageSize, locale = 'de') {
+  try {
+    const params = new URLSearchParams({
+      search_terms: searchTerm,
+      search_simple: '1',
+      action: 'process',
+      json: '1',
+      page_size: String(pageSize),
+      fields: FIELDS,
+    });
+    if (locale) params.set('lc', locale);
+
+    const url = `${BASE_URL}/cgi/search.pl?${params}`;
+    const res = await fetchWithRetry(url, { headers: getRequestHeaders() });
+    if (!res.ok) return [];
+
+    const data = await res.json();
+    return (data.products || []).map(normalizeProduct);
+  } catch {
+    // Do not fail the full matching flow for one failed request.
+    return [];
+  }
+}
+
+function mergeUniqueProducts(existing, incoming, maxItems) {
+  const merged = [...existing];
+  const seen = new Set(
+    merged.map(p => p?._raw?.code || normalizeTextForSearch(`${p?.name || ''} ${p?.brand || ''}`))
+  );
+
+  for (const product of incoming) {
+    const key = product?._raw?.code || normalizeTextForSearch(`${product?.name || ''} ${product?.brand || ''}`);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    merged.push(product);
+    if (merged.length >= maxItems) break;
+  }
+
+  return merged;
 }
 
 /**
@@ -180,6 +245,26 @@ function normalizeTextForSearch(text) {
     .trim();
 }
 
+function buildSearchVariants(query) {
+  const raw = (query || '').trim();
+  const stripped = stripIngredientNoise(raw);
+  const normalized = normalizeTextForSearch(stripped || raw);
+  const variants = new Set();
+
+  if (raw) variants.add(raw);
+  if (stripped && stripped !== raw) variants.add(stripped);
+  if (normalized) variants.add(normalized);
+
+  const firstSegment = raw.split(/[,(/|;+]/)[0]?.trim();
+  if (firstSegment) variants.add(firstSegment);
+
+  const tokens = normalized.split(' ').filter(Boolean);
+  if (tokens.length > 1) variants.add(tokens.slice(0, 2).join(' '));
+  if (tokens.length > 0) variants.add(tokens[0]);
+
+  return [...variants].filter(v => v.length >= 2).slice(0, 6);
+}
+
 function capitalizeFirst(text) {
   if (!text) return '';
   return text.charAt(0).toUpperCase() + text.slice(1);
@@ -292,8 +377,14 @@ function scoreProductMatch(ingredientName, product) {
     `${product.name || ''} ${product.brand || ''} ${product.ingredients || ''}`
   );
 
-  const productTokens = new Set(productText.split(' ').filter(Boolean));
-  const overlapCount = ingredientTokens.filter(t => productTokens.has(t)).length;
+  const productTokens = productText.split(' ').filter(Boolean);
+  const overlapCount = ingredientTokens.filter((ingredientToken) =>
+    productTokens.some((productToken) =>
+      productToken === ingredientToken
+      || productToken.startsWith(ingredientToken)
+      || ingredientToken.startsWith(productToken)
+    )
+  ).length;
 
   if (overlapCount === 0) return -1;
 
