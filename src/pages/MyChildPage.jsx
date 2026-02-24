@@ -5,6 +5,7 @@ import {
   AlertTriangle, Plus, Trash2, Calendar, Baby, Activity,
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
+import { calculateGrowthPercentiles } from '../lib/growthPercentiles';
 
 function calculateAge(birthDate) {
   const birth = new Date(birthDate);
@@ -20,6 +21,17 @@ function calculateBMI(weight, heightCm) {
   if (!weight || !heightCm) return null;
   const heightM = heightCm / 100;
   return (weight / (heightM * heightM)).toFixed(1);
+}
+
+function formatPercentile(value) {
+  if (value == null) return '—';
+  return `P${Math.round(value)}`;
+}
+
+function getSexLabel(sex) {
+  if (sex === 'male') return 'Junge';
+  if (sex === 'female') return 'Mädchen';
+  return null;
 }
 
 function getWeightAlert(entries, childId) {
@@ -148,6 +160,45 @@ function AddGrowthModal({ child, onSave, onClose }) {
   const [height, setHeight] = useState(child.height || '');
   const [weight, setWeight] = useState(child.weight || '');
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [percentilePreview, setPercentilePreview] = useState({
+    weight: null,
+    height: null,
+  });
+
+  const hasPercentileContext = !!child.birthDate && !!child.sex;
+
+  useEffect(() => {
+    let active = true;
+    const h = height ? parseFloat(height) : null;
+    const w = weight ? parseFloat(weight) : null;
+
+    if (!hasPercentileContext || (!h && !w)) {
+      return () => { active = false; };
+    }
+
+    calculateGrowthPercentiles({
+      birthDate: child.birthDate,
+      sex: child.sex,
+      timestamp: new Date(`${date}T12:00:00`),
+      heightCm: h,
+      weightKg: w,
+    })
+      .then((result) => {
+        if (!active) return;
+        setPercentilePreview({
+          weight: result.weightPercentile,
+          height: result.heightPercentile,
+        });
+      })
+      .catch(() => {
+        if (!active) return;
+        setPercentilePreview({ weight: null, height: null });
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [child.birthDate, child.sex, date, hasPercentileContext, height, weight]);
 
   const handleSave = () => {
     const h = height ? parseFloat(height) : null;
@@ -209,6 +260,24 @@ function AddGrowthModal({ child, onSave, onClose }) {
           </div>
         </div>
 
+        {!hasPercentileContext && (
+          <div className="bg-sky-50 border border-sky-200 rounded-xl p-3">
+            <p className="text-xs text-sky-700">
+              Für Perzentilen bitte im Profil Geburtsdatum und Geschlecht angeben.
+            </p>
+          </div>
+        )}
+
+        {hasPercentileContext && (height || weight) && (
+          <div className="bg-sky-50 border border-sky-200 rounded-xl p-3">
+            <p className="text-xs font-semibold text-sky-800 mb-1">Perzentilen-Vorschau</p>
+            <div className="flex items-center gap-3 text-xs text-sky-700">
+              {height && <span>Groesse: {formatPercentile(percentilePreview.height)}</span>}
+              {weight && <span>Gewicht: {formatPercentile(percentilePreview.weight)}</span>}
+            </div>
+          </div>
+        )}
+
         <div className="flex gap-2 pt-2">
           <button
             onClick={onClose}
@@ -233,6 +302,10 @@ export default function MyChildPage() {
   const { state, dispatch, activeChild } = useApp();
   const navigate = useNavigate();
   const [showAddModal, setShowAddModal] = useState(false);
+  const [currentPercentiles, setCurrentPercentiles] = useState({
+    weight: null,
+    height: null,
+  });
 
   // All hooks MUST be before any conditional return
   const childId = activeChild?.id;
@@ -256,11 +329,46 @@ export default function MyChildPage() {
     }
   }, [activeChild, navigate]);
 
+  useEffect(() => {
+    let active = true;
+    if (!activeChild) return () => { active = false; };
+
+    const hasContext = !!activeChild.birthDate && !!activeChild.sex;
+    const hasMeasurement = !!activeChild.height || !!activeChild.weight;
+    if (!hasContext || !hasMeasurement) {
+      return () => { active = false; };
+    }
+
+    calculateGrowthPercentiles({
+      birthDate: activeChild.birthDate,
+      sex: activeChild.sex,
+      timestamp: new Date(),
+      heightCm: activeChild.height,
+      weightKg: activeChild.weight,
+    })
+      .then((result) => {
+        if (!active) return;
+        setCurrentPercentiles({
+          weight: result.weightPercentile,
+          height: result.heightPercentile,
+        });
+      })
+      .catch(() => {
+        if (!active) return;
+        setCurrentPercentiles({ weight: null, height: null });
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [activeChild]);
+
   if (!activeChild) {
     return null;
   }
 
   const child = activeChild;
+  const childHasPercentileContext = !!child.birthDate && !!child.sex;
   const bmi = calculateBMI(child.weight, child.height);
   const age = calculateAge(child.birthDate);
 
@@ -329,6 +437,11 @@ export default function MyChildPage() {
               <div className="flex items-center gap-2 mt-1">
                 <Baby className="w-3.5 h-3.5 text-gray-400" />
                 <span className="text-sm text-gray-500">{age}</span>
+                {getSexLabel(child.sex) && (
+                  <span className="px-2 py-0.5 rounded-full bg-sky-50 text-sky-600 text-[10px] font-medium">
+                    {getSexLabel(child.sex)}
+                  </span>
+                )}
               </div>
               {child.knownAllergies?.length > 0 && (
                 <div className="flex flex-wrap gap-1 mt-2">
@@ -374,12 +487,25 @@ export default function MyChildPage() {
           </div>
         )}
 
+        {!child.sex && (
+          <div className="bg-sky-50 border border-sky-200 rounded-2xl p-3">
+            <p className="text-xs text-sky-700">
+              Für medizinische Perzentilen bitte im Profil das Geschlecht hinterlegen.
+            </p>
+          </div>
+        )}
+
         {/* Current Stats */}
         <div className="grid grid-cols-3 gap-3">
           <div className="bg-white rounded-2xl shadow-sm p-4 text-center">
             <Ruler className="w-5 h-5 text-sage-500 mx-auto mb-1.5" />
             <p className="text-lg font-bold text-gray-800">{child.height || '\u2014'}</p>
             <p className="text-[11px] text-gray-400">cm</p>
+            {childHasPercentileContext && currentPercentiles.height != null && (
+              <p className="text-[10px] text-sky-600 mt-1 font-medium">
+                {formatPercentile(currentPercentiles.height)}
+              </p>
+            )}
             {heightTrend !== null && (
               <div className={`flex items-center justify-center gap-0.5 mt-1 ${heightTrend >= 0 ? 'text-sage-600' : 'text-rose-500'}`}>
                 {heightTrend >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
@@ -391,6 +517,11 @@ export default function MyChildPage() {
             <Weight className="w-5 h-5 text-sky-500 mx-auto mb-1.5" />
             <p className="text-lg font-bold text-gray-800">{child.weight || '\u2014'}</p>
             <p className="text-[11px] text-gray-400">kg</p>
+            {childHasPercentileContext && currentPercentiles.weight != null && (
+              <p className="text-[10px] text-sky-600 mt-1 font-medium">
+                {formatPercentile(currentPercentiles.weight)}
+              </p>
+            )}
             {weightTrend !== null && (
               <div className={`flex items-center justify-center gap-0.5 mt-1 ${weightTrend >= 0 ? 'text-sage-600' : 'text-rose-500'}`}>
                 {weightTrend >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}

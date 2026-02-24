@@ -20,6 +20,7 @@ export default function EditChildModal({ child, onSave, onDelete, onClose, onGro
   const [form, setForm] = useState({
     name: child.name,
     birthDate: child.birthDate,
+    sex: child.sex || '',
     height: child.height || '',
     weight: child.weight || '',
     knownAllergies: child.knownAllergies || [],
@@ -198,6 +199,25 @@ export default function EditChildModal({ child, onSave, onDelete, onClose, onGro
               onChange={e => updateField('birthDate', e.target.value)}
               className="w-full px-4 py-3 rounded-xl bg-white border border-sage-200 focus:outline-none focus:ring-2 focus:ring-sage-300 transition text-gray-800"
             />
+          </div>
+
+          {/* Sex */}
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+              <User className="w-4 h-4" /> Geschlecht (für Perzentilen)
+            </label>
+            <select
+              value={form.sex}
+              onChange={e => updateField('sex', e.target.value)}
+              className="w-full px-4 py-3 rounded-xl bg-white border border-sage-200 focus:outline-none focus:ring-2 focus:ring-sage-300 transition text-gray-800"
+            >
+              <option value="">Nicht angegeben</option>
+              <option value="female">Mädchen</option>
+              <option value="male">Junge</option>
+            </select>
+            <p className="text-xs text-gray-400 mt-1">
+              Ohne Angabe können keine medizinischen Perzentilen berechnet werden.
+            </p>
           </div>
 
           {/* Height & Weight */}
