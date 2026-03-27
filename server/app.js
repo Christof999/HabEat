@@ -7,6 +7,14 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 const OPEN_FOOD_FACTS_SEARCH_URL = 'https://world.openfoodfacts.org/cgi/search.pl';
 
+/** Makro-Kalorien-Abweichung: Flag ab diesem Anteil, schärferer Hinweis darüber */
+const MACRO_KCAL_TOLERANCE = 0.35;
+const MACRO_KCAL_SEVERE = 0.55;
+const OFF_FIELD_THRESHOLD = 0.55;
+const API_PROMPT_VERSION = 3;
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 app.use(express.json({ limit: '12mb' }));
 
 // Vercel Serverless: Anfrage ggf. /meals/verify statt /api/meals/verify
@@ -65,12 +73,25 @@ function runLocalChecks(primaryMeal, verifiedMeal, currentFlags) {
 
   if (primaryMeal.calories > 0) {
     const delta = Math.abs(kcalFromMacrosPrimary - primaryMeal.calories) / primaryMeal.calories;
-    if (delta > 0.45) flags.push('Primäranalyse: Kalorien wirken im Verhältnis zu Makros unplausibel.');
+    if (delta > MACRO_KCAL_SEVERE) {
+      flags.push('Primäranalyse: starke Diskrepanz zwischen Kalorien und Makros (bitte prüfen).');
+    } else if (delta > MACRO_KCAL_TOLERANCE) {
+      flags.push('Primäranalyse: Kalorien und Makros passen nur bedingt zusammen.');
+    }
   }
 
   if (verifiedMeal.calories > 0) {
     const delta = Math.abs(kcalFromMacrosVerified - verifiedMeal.calories) / verifiedMeal.calories;
-    if (delta > 0.45) flags.push('Gegencheck: Kalorien wirken im Verhältnis zu Makros unplausibel.');
+    if (delta > MACRO_KCAL_SEVERE) {
+      flags.push('Gegencheck: starke Diskrepanz zwischen Kalorien und Makros (bitte prüfen).');
+    } else if (delta > MACRO_KCAL_TOLERANCE) {
+      flags.push('Gegencheck: Kalorien und Makros passen nur bedingt zusammen.');
+    }
+  }
+
+  if (verifiedMeal.calories === 0
+    && (verifiedMeal.protein > 0 || verifiedMeal.carbs > 0 || verifiedMeal.fat > 5)) {
+    flags.push('Kalorien fehlen, Makros sind gesetzt – Angaben bitte prüfen.');
   }
 
   if (verifiedMeal.ingredients.length === 0) {
@@ -80,41 +101,91 @@ function runLocalChecks(primaryMeal, verifiedMeal, currentFlags) {
   return [...new Set(flags)];
 }
 
+function adjustConfidenceForFlags(confidence, flags) {
+  let c = Number.isFinite(Number(confidence)) ? Number(confidence) : 72;
+  const joined = flags.join(' | ');
+  if (joined.includes('Primäranalyse: starke Diskrepanz')) c -= 10;
+  else if (joined.includes('Primäranalyse: Kalorien und Makros')) c -= 5;
+  if (joined.includes('Gegencheck: starke Diskrepanz')) c -= 12;
+  else if (joined.includes('Gegencheck: Kalorien und Makros')) c -= 6;
+  if (joined.includes('OpenFoodFacts:')) c -= 4;
+  if (joined.includes('Keine Zutaten erkannt')) c -= 14;
+  if (joined.includes('Kalorien fehlen')) c -= 8;
+  return Math.max(0, Math.min(100, Math.round(c)));
+}
+
+/** Portionsannahme (g) aus Freitext, z. B. „200 g“, „halber Teller“ */
+function extractEstimatedPortionGrams(adultMode, ...textParts) {
+  const text = textParts.filter(Boolean).join(' ').toLowerCase();
+  let base = adultMode ? 300 : 150;
+  let explicit = null;
+
+  const gMatch = text.match(/(\d+)\s*(g|gramm)\b/i);
+  if (gMatch) {
+    explicit = Math.min(900, Math.max(40, parseInt(gMatch[1], 10)));
+  }
+
+  const mlMatch = text.match(/(\d+)\s*ml\b/i);
+  if (mlMatch && explicit == null) {
+    explicit = Math.min(700, Math.max(50, parseInt(mlMatch[1], 10)));
+  }
+
+  if (explicit != null) return explicit;
+
+  if (/halbe(r|n)?\s+teller|\bhalf\s+plate\b/i.test(text)) base *= 0.65;
+  if (/ganze(r|n)?\s+teller|voller\s+teller|ganze\s+portion/i.test(text)) base *= 1.12;
+  if (/kleine\s+portion|\bwenig\b/i.test(text)) base *= 0.82;
+  if (/gro(ß|ss)e\s+portion|\bviel\b|zweite\s+portion/i.test(text)) base *= 1.22;
+
+  return Math.round(Math.min(650, Math.max(50, base)));
+}
+
+function buildOffSearchQueries(meal) {
+  const title = String(meal.title || '').trim();
+  const ings = (meal.ingredients || []).map((i) => String(i).trim()).filter(Boolean);
+  const out = [];
+  const full = [title, ...ings.slice(0, 3)].filter(Boolean).join(' ');
+  if (full) out.push(full);
+  if (title) out.push(title);
+  if (title && ings[0]) out.push(`${title} ${ings[0]}`);
+  if (ings.length >= 2) out.push(`${ings[0]} ${ings[1]}`);
+  if (ings[0] && ings[0].length > 2) out.push(ings[0]);
+  return [...new Set(out.map((q) => q.slice(0, 120).trim()).filter(Boolean))].slice(0, 5);
+}
+
 function toFiniteNumber(value) {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 }
 
-async function fetchOpenFoodFactsReference(meal, options = {}) {
-  const estimatedPortionGrams = Number.isFinite(Number(options.estimatedPortionGrams))
-    ? Math.max(50, Math.round(Number(options.estimatedPortionGrams)))
-    : 150;
-  const queryParts = [meal.title, ...(meal.ingredients || []).slice(0, 3)]
-    .map((item) => String(item || '').trim())
-    .filter(Boolean);
-
-  if (queryParts.length === 0) {
-    return null;
+async function fetchOffJsonWithRetry(urlString) {
+  let lastErr;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (attempt > 0) await sleep(280 * attempt);
+    try {
+      const response = await fetch(urlString);
+      if (response.ok) return response.json();
+      if ([429, 502, 503].includes(response.status) && attempt < 2) {
+        lastErr = new Error(`OpenFoodFacts Fehler: ${response.status}`);
+        continue;
+      }
+      throw new Error(`OpenFoodFacts Fehler: ${response.status}`);
+    } catch (err) {
+      lastErr = err;
+      const m = String(err?.message || '');
+      const retryable = m.includes('fetch')
+        || m.includes('OpenFoodFacts Fehler: 429')
+        || m.includes('OpenFoodFacts Fehler: 502')
+        || m.includes('OpenFoodFacts Fehler: 503');
+      if (attempt < 2 && retryable) continue;
+      throw err;
+    }
   }
+  throw lastErr;
+}
 
-  const searchTerms = queryParts.join(' ');
-  const url = new URL(OPEN_FOOD_FACTS_SEARCH_URL);
-  url.searchParams.set('search_terms', searchTerms);
-  url.searchParams.set('search_simple', '1');
-  url.searchParams.set('action', 'process');
-  url.searchParams.set('json', '1');
-  url.searchParams.set('page_size', '8');
-  url.searchParams.set('fields', 'product_name,nutriments');
-
-  const response = await fetch(url.toString());
-  if (!response.ok) {
-    throw new Error(`OpenFoodFacts Fehler: ${response.status}`);
-  }
-
-  const data = await response.json();
-  const products = Array.isArray(data.products) ? data.products : [];
-
-  const refs = products
+function productsToNutrientRefs(products) {
+  return products
     .map((product) => {
       const nutriments = product?.nutriments || {};
       return {
@@ -130,27 +201,72 @@ async function fetchOpenFoodFactsReference(meal, options = {}) {
       || ref.carbsPer100g != null
       || ref.fatPer100g != null
     ));
+}
 
-  if (refs.length === 0) {
+async function fetchOpenFoodFactsReference(meal, options = {}) {
+  const estimatedPortionGrams = Number.isFinite(Number(options.estimatedPortionGrams))
+    ? Math.max(50, Math.round(Number(options.estimatedPortionGrams)))
+    : 150;
+
+  const queries = buildOffSearchQueries(meal);
+  const queriesAttempted = [];
+
+  if (queries.length === 0) {
     return {
       matched: false,
-      query: searchTerms,
+      query: '',
       sampleSize: 0,
       referencePer100g: null,
       estimatedPortionGrams,
+      queriesAttempted,
+    };
+  }
+
+  let bestRefs = [];
+  let bestQuery = queries[0];
+
+  for (const searchTerms of queries) {
+    queriesAttempted.push(searchTerms);
+    const url = new URL(OPEN_FOOD_FACTS_SEARCH_URL);
+    url.searchParams.set('search_terms', searchTerms);
+    url.searchParams.set('search_simple', '1');
+    url.searchParams.set('action', 'process');
+    url.searchParams.set('json', '1');
+    url.searchParams.set('page_size', '10');
+    url.searchParams.set('fields', 'product_name,nutriments');
+
+    const data = await fetchOffJsonWithRetry(url.toString());
+    const products = Array.isArray(data.products) ? data.products : [];
+    const refs = productsToNutrientRefs(products);
+
+    if (refs.length > bestRefs.length) {
+      bestRefs = refs;
+      bestQuery = searchTerms;
+    }
+    if (refs.length >= 8) break;
+  }
+
+  if (bestRefs.length === 0) {
+    return {
+      matched: false,
+      query: bestQuery,
+      sampleSize: 0,
+      referencePer100g: null,
+      estimatedPortionGrams,
+      queriesAttempted,
     };
   }
 
   const avg = (field) => {
-    const values = refs.map((row) => row[field]).filter((value) => value != null);
+    const values = bestRefs.map((row) => row[field]).filter((value) => value != null);
     if (values.length === 0) return null;
     return values.reduce((sum, value) => sum + value, 0) / values.length;
   };
 
   return {
     matched: true,
-    query: searchTerms,
-    sampleSize: refs.length,
+    query: bestQuery,
+    sampleSize: bestRefs.length,
     referencePer100g: {
       calories: avg('caloriesPer100g'),
       protein: avg('proteinPer100g'),
@@ -158,6 +274,7 @@ async function fetchOpenFoodFactsReference(meal, options = {}) {
       fat: avg('fatPer100g'),
     },
     estimatedPortionGrams,
+    queriesAttempted,
   };
 }
 
@@ -183,7 +300,7 @@ function appendOpenFoodFactsFlags(verifiedMeal, openFoodFacts, currentFlags) {
       : null,
   };
 
-  const checkField = (field, label, threshold = 0.6) => {
+  const checkField = (field, label, threshold = OFF_FIELD_THRESHOLD) => {
     const expectedValue = expected[field];
     const actualValue = verifiedMeal[field];
     if (expectedValue == null || !Number.isFinite(actualValue) || expectedValue <= 0) return;
@@ -201,7 +318,7 @@ function appendOpenFoodFactsFlags(verifiedMeal, openFoodFacts, currentFlags) {
   return [...new Set(flags)];
 }
 
-async function callGemini(parts, temperature = 0.2) {
+async function callGemini(parts, temperature = 0.2, jsonMode = false) {
   const apiKey = String(GEMINI_API_KEY || '')
     .trim()
     .replace(/^['"]+|['"]+$/g, '');
@@ -213,6 +330,14 @@ async function callGemini(parts, temperature = 0.2) {
   const geminiUrl = new URL(GEMINI_URL);
   geminiUrl.searchParams.set('key', apiKey);
 
+  const generationConfig = {
+    temperature,
+    maxOutputTokens: 2048,
+  };
+  if (jsonMode) {
+    generationConfig.responseMimeType = 'application/json';
+  }
+
   let response;
   try {
     response = await fetch(geminiUrl.toString(), {
@@ -220,22 +345,49 @@ async function callGemini(parts, temperature = 0.2) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts }],
-        generationConfig: {
-          temperature,
-          maxOutputTokens: 2048,
-        },
+        generationConfig,
       }),
     });
   } catch (err) {
-    throw new Error(`Gemini Request fehlgeschlagen: ${err.message}`);
+    const e = new Error(`Gemini Request fehlgeschlagen: ${err.message}`);
+    e.statusCode = 0;
+    throw e;
   }
 
   if (!response.ok) {
-    throw new Error(`Gemini API Fehler: ${response.status}`);
+    const e = new Error(`Gemini API Fehler: ${response.status}`);
+    e.statusCode = response.status;
+    throw e;
   }
 
   const data = await response.json();
   return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+}
+
+function isGeminiRetryableError(err) {
+  const code = err?.statusCode;
+  if (code === 429 || code === 502 || code === 503 || code === 504) return true;
+  if (code === 0 || String(err?.message || '').includes('fehlgeschlagen')) return true;
+  return false;
+}
+
+async function callGeminiWithRetry(parts, temperature = 0.2, jsonMode = false) {
+  const backoffMs = [0, 500, 1600];
+  let lastErr;
+  for (let i = 0; i < backoffMs.length; i += 1) {
+    if (backoffMs[i] > 0) await sleep(backoffMs[i]);
+    try {
+      const text = await callGemini(parts, temperature, jsonMode);
+      if (String(text || '').trim()) return text;
+      lastErr = new Error('Leere Gemini-Antwort');
+      lastErr.statusCode = 204;
+    } catch (err) {
+      lastErr = err;
+      if (i < backoffMs.length - 1 && isGeminiRetryableError(err)) continue;
+      throw err;
+    }
+  }
+  throw lastErr;
 }
 
 function buildAllergyText(childContext, adultMode) {
@@ -248,11 +400,41 @@ function buildAllergyText(childContext, adultMode) {
 }
 
 function parseGeminiMealJson(raw) {
-  const primaryParsed = JSON.parse(cleanJsonText(raw));
+  const s = String(raw || '').trim();
+  const primaryParsed = JSON.parse(s.startsWith('{') ? s : cleanJsonText(raw));
   return mealSchema.parse(sanitizeMeal(primaryParsed));
 }
 
-async function runPostPrimaryPipeline(primaryMeal, adultMode) {
+function parseGeminiVerifyJson(raw) {
+  const s = String(raw || '').trim();
+  const parsed = JSON.parse(s.startsWith('{') ? s : cleanJsonText(raw));
+  return verifyResponseSchema.parse({
+    ...parsed,
+    verifiedMeal: sanitizeMeal(parsed.verifiedMeal),
+  });
+}
+
+/** Text-only Mahlzeit-JSON; Fallback ohne responseMimeType wenn die API JSON-Modus ablehnt. */
+async function parseMealFromGeminiParts(parts, temperature = 0.2) {
+  try {
+    const raw = await callGeminiWithRetry(parts, temperature, true);
+    return parseGeminiMealJson(raw);
+  } catch (err) {
+    const m = String(err?.message || '');
+    if (m.includes('400') || m.toLowerCase().includes('json')) {
+      const raw = await callGeminiWithRetry(parts, temperature, false);
+      return parseGeminiMealJson(raw);
+    }
+    throw err;
+  }
+}
+
+async function runPostPrimaryPipeline(primaryMeal, adultMode, pipelineOptions = {}) {
+  const portionContext = typeof pipelineOptions.portionContext === 'string'
+    ? pipelineOptions.portionContext
+    : '';
+  const portionGrams = extractEstimatedPortionGrams(adultMode, portionContext);
+
   const verifyPrompt = `Du bist ein strenger Qualitätsprüfer für Ernährungsdaten.
 Prüfe die Primäranalyse auf Plausibilität und korrigiere nur bei klaren Widersprüchen.
 ${adultMode ? 'Kontext: Mahlzeit und Nährwerte für eine erwachsene Portionsgröße (keine Kleinkind-Annahmen, keine Kinder-Referenzkurven).' : ''}
@@ -276,12 +458,18 @@ Antworte NUR als JSON ohne Markdown:
   "flags": ["Liste konkreter Prüfhinweise"]
 }`;
 
-  const verifyRaw = await callGemini([{ text: verifyPrompt }], 0.1);
-  const verifyParsed = JSON.parse(cleanJsonText(verifyRaw));
-  const verifyResult = verifyResponseSchema.parse({
-    ...verifyParsed,
-    verifiedMeal: sanitizeMeal(verifyParsed.verifiedMeal),
-  });
+  let verifyRaw;
+  try {
+    verifyRaw = await callGeminiWithRetry([{ text: verifyPrompt }], 0.1, true);
+  } catch (err) {
+    const m = String(err?.message || '');
+    if (m.includes('400') || m.toLowerCase().includes('json')) {
+      verifyRaw = await callGeminiWithRetry([{ text: verifyPrompt }], 0.1, false);
+    } else {
+      throw err;
+    }
+  }
+  const verifyResult = parseGeminiVerifyJson(verifyRaw);
 
   const localFlags = runLocalChecks(primaryMeal, verifyResult.verifiedMeal, verifyResult.flags || []);
 
@@ -290,7 +478,7 @@ Antworte NUR als JSON ohne Markdown:
 
   try {
     openFoodFacts = await fetchOpenFoodFactsReference(verifyResult.verifiedMeal, {
-      estimatedPortionGrams: adultMode ? 300 : 150,
+      estimatedPortionGrams: portionGrams,
     });
     flags = appendOpenFoodFactsFlags(verifyResult.verifiedMeal, openFoodFacts, localFlags);
   } catch (offErr) {
@@ -300,18 +488,33 @@ Antworte NUR als JSON ohne Markdown:
       query: verifyResult.verifiedMeal.title,
       sampleSize: 0,
       referencePer100g: null,
-      estimatedPortionGrams: adultMode ? 300 : 150,
+      estimatedPortionGrams: portionGrams,
       error: offErr.message,
+      queriesAttempted: [],
     };
+  }
+
+  const confidenceAdjusted = adjustConfidenceForFlags(verifyResult.confidence, flags);
+
+  const trace = {
+    promptVersion: API_PROMPT_VERSION,
+    portionGramsAssumed: openFoodFacts?.estimatedPortionGrams ?? portionGrams,
+    offQueriesTried: openFoodFacts?.queriesAttempted?.length ?? 0,
+    offQueryUsed: openFoodFacts?.matched ? openFoodFacts.query : null,
+  };
+
+  if (process.env.HABEAT_LOG_AI === '1') {
+    console.info('[HabEat verify]', trace.promptVersion, 'flags', flags.length, 'confidence', confidenceAdjusted);
   }
 
   return {
     analysis: primaryMeal,
     corrected: verifyResult.verifiedMeal,
-    confidence: verifyResult.confidence,
+    confidence: confidenceAdjusted,
     flags,
     openFoodFacts,
     checkedAt: new Date().toISOString(),
+    trace,
   };
 }
 
@@ -348,16 +551,28 @@ Gib NUR JSON ohne Markdown zurück:
 }`;
 }
 
-async function runImageAnalysisPipeline(imageBase64, allergyText, adultMode) {
+async function runImageAnalysisPipeline(imageBase64, allergyText, adultMode, portionContext = '') {
   const mimeType = imageBase64.startsWith('data:image/png') ? 'image/png' : 'image/jpeg';
   const imageData = imageBase64.replace(/^data:image\/\w+;base64,/, '');
   const primaryPrompt = buildImagePrimaryPrompt(allergyText, adultMode);
-  const primaryRaw = await callGemini([
+  const parts = [
     { text: primaryPrompt },
     { inline_data: { mime_type: mimeType, data: imageData } },
-  ], 0.2);
-  const primaryMeal = parseGeminiMealJson(primaryRaw);
-  return runPostPrimaryPipeline(primaryMeal, adultMode);
+  ];
+  let primaryMeal;
+  try {
+    const primaryRaw = await callGeminiWithRetry(parts, 0.2, true);
+    primaryMeal = parseGeminiMealJson(primaryRaw);
+  } catch (err) {
+    const m = String(err?.message || '');
+    if (m.includes('400') || m.toLowerCase().includes('json')) {
+      const primaryRaw = await callGeminiWithRetry(parts, 0.2, false);
+      primaryMeal = parseGeminiMealJson(primaryRaw);
+    } else {
+      throw err;
+    }
+  }
+  return runPostPrimaryPipeline(primaryMeal, adultMode, { portionContext });
 }
 
 function buildTextPrimaryPrompt(mealDescription, allergyText, adultMode) {
@@ -421,9 +636,11 @@ app.post('/api/meals/verify', async (req, res) => {
     userContext,
     childContext,
     adultNutrition,
+    portionHints,
   } = req.body || {};
   const adultMode = adultNutrition === true;
   const allergyText = buildAllergyText(childContext, adultMode);
+  const hints = typeof portionHints === 'string' ? portionHints.trim().slice(0, 500) : '';
 
   try {
     const hasRefine = previousMeal != null && typeof previousMeal === 'object'
@@ -431,9 +648,11 @@ app.post('/api/meals/verify', async (req, res) => {
     if (hasRefine) {
       const ctx = userContext.trim().slice(0, 2000);
       const base = mealSchema.parse(sanitizeMeal(previousMeal));
-      const refineRaw = await callGemini([{ text: buildRefinePrompt(base, ctx, allergyText, adultMode) }], 0.2);
-      const refinedPrimary = parseGeminiMealJson(refineRaw);
-      const out = await runPostPrimaryPipeline(refinedPrimary, adultMode);
+      const refinedPrimary = await parseMealFromGeminiParts(
+        [{ text: buildRefinePrompt(base, ctx, allergyText, adultMode) }],
+        0.2,
+      );
+      const out = await runPostPrimaryPipeline(refinedPrimary, adultMode, { portionContext: ctx });
       return res.json(out);
     }
 
@@ -442,17 +661,16 @@ app.post('/api/meals/verify', async (req, res) => {
       if (desc.length < 10) {
         return res.status(400).json({ error: 'Beschreibung zu kurz (mindestens 10 Zeichen).' });
       }
-      const primaryRaw = await callGemini(
+      const primaryMeal = await parseMealFromGeminiParts(
         [{ text: buildTextPrimaryPrompt(desc.slice(0, 3000), allergyText, adultMode) }],
         0.2,
       );
-      const primaryMeal = parseGeminiMealJson(primaryRaw);
-      const out = await runPostPrimaryPipeline(primaryMeal, adultMode);
+      const out = await runPostPrimaryPipeline(primaryMeal, adultMode, { portionContext: desc });
       return res.json(out);
     }
 
     if (imageBase64 && typeof imageBase64 === 'string') {
-      const out = await runImageAnalysisPipeline(imageBase64, allergyText, adultMode);
+      const out = await runImageAnalysisPipeline(imageBase64, allergyText, adultMode, hints);
       return res.json(out);
     }
 

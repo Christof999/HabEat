@@ -24,6 +24,8 @@ export default function TrackingPage() {
   const [quickType, setQuickType] = useState(null);
   const [preForm, setPreForm] = useState({ brand: '', preparedMl: '', consumedMl: '', comment: '' });
   const [breastForm, setBreastForm] = useState({ durationMin: '', side: 'links', comment: '' });
+  /** Optional fürs Foto: Gramm/Portion für robustere OFF-Schätzung (API: portionHints) */
+  const [portionHints, setPortionHints] = useState('');
 
   const adjustTitleHeight = useCallback(() => {
     const el = titleRef.current;
@@ -226,8 +228,12 @@ export default function TrackingPage() {
     setKiContext('');
 
     try {
-      const verified = await callVerifyApi({ imageBase64: base64Image });
+      const verified = await callVerifyApi({
+        imageBase64: base64Image,
+        ...(portionHints.trim() ? { portionHints: portionHints.trim().slice(0, 500) } : {}),
+      });
       applyVerifiedResult(verified);
+      setPortionHints('');
       setIsAnalyzing(false);
       setStep('review');
     } catch (err) {
@@ -356,9 +362,23 @@ export default function TrackingPage() {
       {/* Step: Capture */}
       {step === 'capture' && (
         <div className="px-6 py-8 space-y-4">
-          <p className="text-center text-gray-500 mb-6">
+          <p className="text-center text-gray-500 mb-4">
             Fotografiere die Mahlzeit oder wähle ein Bild aus der Galerie.
           </p>
+
+          <div className="mb-4">
+            <label className="text-xs font-medium text-gray-600 block mb-1.5">
+              Optional: Portions-Hinweis fürs Foto (z. B. „250 g“, „halber Teller“)
+            </label>
+            <input
+              type="text"
+              value={portionHints}
+              onChange={(e) => setPortionHints(e.target.value)}
+              maxLength={500}
+              placeholder="Leer lassen, wenn nicht nötig"
+              className="w-full px-3 py-2.5 rounded-xl bg-white border border-sage-200 text-sm text-gray-800 placeholder:text-gray-400"
+            />
+          </div>
 
           {analyzeError && (
             <div className="flex items-center gap-2 px-4 py-3 bg-rose-50 border border-rose-200 rounded-xl">
