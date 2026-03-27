@@ -1,6 +1,12 @@
 import 'dotenv/config';
 import express from 'express';
+import { readFileSync } from 'fs';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 import { z } from 'zod';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const app = express();
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
@@ -17,7 +23,9 @@ const OFF_FETCH_TIMEOUT_MS = 18_000;
 const MACRO_KCAL_TOLERANCE = 0.35;
 const MACRO_KCAL_SEVERE = 0.55;
 const OFF_FIELD_THRESHOLD = 0.55;
-const API_PROMPT_VERSION = 3;
+const BLS_FIELD_THRESHOLD = 0.58;
+const MIN_BLS_MATCH_SCORE = 5;
+const API_PROMPT_VERSION = 4;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -115,6 +123,7 @@ function adjustConfidenceForFlags(confidence, flags) {
   if (joined.includes('Gegencheck: starke Diskrepanz')) c -= 12;
   else if (joined.includes('Gegencheck: Kalorien und Makros')) c -= 6;
   if (joined.includes('OpenFoodFacts:')) c -= 4;
+  if (joined.includes('BLS-Basis:')) c -= 3;
   if (joined.includes('Keine Zutaten erkannt')) c -= 14;
   if (joined.includes('Kalorien fehlen')) c -= 8;
   return Math.max(0, Math.min(100, Math.round(c)));
@@ -334,6 +343,138 @@ function appendOpenFoodFactsFlags(verifiedMeal, openFoodFacts, currentFlags) {
   return [...new Set(flags)];
 }
 
+// --- BLS Basis (lokal server/data/bls-basis.json, CC BY 4.0 MRI) ---
+
+let blsBasisBundleCache = null;
+
+function loadBlsBasisBundle() {
+  if (blsBasisBundleCache !== null) return blsBasisBundleCache;
+  try {
+    const p = join(__dirname, 'data', 'bls-basis.json');
+    const raw = readFileSync(p, 'utf8');
+    blsBasisBundleCache = JSON.parse(raw);
+  } catch {
+    blsBasisBundleCache = { meta: null, items: [] };
+  }
+  return blsBasisBundleCache;
+}
+
+function blsNormalizeText(s) {
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/ä/g, 'ae')
+    .replace(/ö/g, 'oe')
+    .replace(/ü/g, 'ue')
+    .replace(/ß/g, 'ss');
+}
+
+function blsQueryTokens(meal) {
+  const q = `${meal.title || ''} ${(meal.ingredients || []).join(' ')}`;
+  return blsNormalizeText(q)
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length > 2);
+}
+
+function scoreBlsItem(queryTokens, item) {
+  const words = blsNormalizeText(`${item.nameDe} ${item.nameEn}`)
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length > 1);
+  const hay = words.join(' ');
+  let s = 0;
+  for (const t of queryTokens) {
+    if (t.length < 3) continue;
+    if (hay.includes(t)) {
+      s += Math.min(t.length, 8);
+      continue;
+    }
+    for (const w of words) {
+      if (w.length < 3) continue;
+      if (w.startsWith(t) || t.startsWith(w)) {
+        s += Math.min(Math.max(w.length, t.length), 8);
+        break;
+      }
+    }
+  }
+  return s;
+}
+
+function findBestBlsMatch(meal) {
+  const bundle = loadBlsBasisBundle();
+  const items = bundle.items || [];
+  const meta = bundle.meta || null;
+  if (!items.length) {
+    return { matched: false, reason: 'no_dataset', meta };
+  }
+  const tokens = blsQueryTokens(meal);
+  if (!tokens.length) {
+    return { matched: false, reason: 'no_query', meta };
+  }
+  let best = null;
+  let bestScore = 0;
+  for (const item of items) {
+    const sc = scoreBlsItem(tokens, item);
+    if (sc > bestScore) {
+      bestScore = sc;
+      best = item;
+    }
+  }
+  if (!best || bestScore < MIN_BLS_MATCH_SCORE) {
+    return { matched: false, reason: 'no_match', score: bestScore, meta };
+  }
+  return {
+    matched: true,
+    code: best.code,
+    nameDe: best.nameDe,
+    nameEn: best.nameEn,
+    matchScore: bestScore,
+    referencePer100g: {
+      calories: best.kcalPer100g,
+      protein: best.proteinPer100g,
+      carbs: best.carbsPer100g,
+      fat: best.fatPer100g,
+    },
+    meta,
+  };
+}
+
+function appendBlsBasisFlags(verifiedMeal, blsRef, currentFlags) {
+  if (!blsRef?.matched || !blsRef.referencePer100g) {
+    return currentFlags;
+  }
+  const ref = blsRef.referencePer100g;
+  if (ref.calories == null || !Number.isFinite(ref.calories)) {
+    return currentFlags;
+  }
+
+  const flags = [...currentFlags];
+  const portionFactor = (blsRef.estimatedPortionGrams || 150) / 100;
+  const expected = {
+    calories: ref.calories != null ? ref.calories * portionFactor : null,
+    protein: ref.protein != null ? ref.protein * portionFactor : null,
+    carbs: ref.carbs != null ? ref.carbs * portionFactor : null,
+    fat: ref.fat != null ? ref.fat * portionFactor : null,
+  };
+
+  const checkField = (field, label) => {
+    const expectedValue = expected[field];
+    const actualValue = verifiedMeal[field];
+    if (expectedValue == null || !Number.isFinite(actualValue) || expectedValue <= 0) return;
+    const ratio = Math.abs(actualValue - expectedValue) / expectedValue;
+    if (ratio > BLS_FIELD_THRESHOLD) {
+      flags.push(`BLS-Basis: ${label} weicht vom Referenzwert (${blsRef.nameDe}) ab.`);
+    }
+  };
+
+  checkField('calories', 'Kalorien');
+  checkField('protein', 'Protein');
+  checkField('carbs', 'Kohlenhydrate');
+  checkField('fat', 'Fett');
+
+  return [...new Set(flags)];
+}
+
 async function callGemini(parts, temperature = 0.2, jsonMode = false) {
   const apiKey = String(GEMINI_API_KEY || '')
     .trim()
@@ -510,6 +651,37 @@ Antworte NUR als JSON ohne Markdown:
     };
   }
 
+  let blsBasis = null;
+  try {
+    const blsHit = findBestBlsMatch(verifyResult.verifiedMeal);
+    if (blsHit.matched) {
+      const blsRef = { ...blsHit, estimatedPortionGrams: portionGrams };
+      flags = appendBlsBasisFlags(verifyResult.verifiedMeal, blsRef, flags);
+      blsBasis = {
+        matched: true,
+        code: blsHit.code,
+        nameDe: blsHit.nameDe,
+        nameEn: blsHit.nameEn,
+        matchScore: blsHit.matchScore,
+        referencePer100g: blsHit.referencePer100g,
+        estimatedPortionGrams: portionGrams,
+        license: blsHit.meta?.license || 'CC BY 4.0',
+        citation: blsHit.meta?.citation,
+        subsetDescription: blsHit.meta?.subsetDescription,
+      };
+    } else {
+      blsBasis = {
+        matched: false,
+        reason: blsHit.reason,
+        matchScore: blsHit.score ?? null,
+        license: blsHit.meta?.license,
+        citation: blsHit.meta?.citation,
+      };
+    }
+  } catch {
+    blsBasis = { matched: false, reason: 'error' };
+  }
+
   const confidenceAdjusted = adjustConfidenceForFlags(verifyResult.confidence, flags);
 
   const trace = {
@@ -517,6 +689,7 @@ Antworte NUR als JSON ohne Markdown:
     portionGramsAssumed: openFoodFacts?.estimatedPortionGrams ?? portionGrams,
     offQueriesTried: openFoodFacts?.queriesAttempted?.length ?? 0,
     offQueryUsed: openFoodFacts?.matched ? openFoodFacts.query : null,
+    blsMatched: Boolean(blsBasis?.matched),
   };
 
   if (process.env.HABEAT_LOG_AI === '1') {
@@ -529,6 +702,7 @@ Antworte NUR als JSON ohne Markdown:
     confidence: confidenceAdjusted,
     flags,
     openFoodFacts,
+    blsBasis,
     checkedAt: new Date().toISOString(),
     trace,
   };

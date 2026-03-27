@@ -85,6 +85,7 @@ export default function TrackingPage() {
       flags: data.flags || [],
       original: data.analysis || null,
       openFoodFacts: data.openFoodFacts || null,
+      blsBasis: data.blsBasis || null,
     });
     setTitle(parsed.title || 'Mahlzeit');
   };
@@ -131,6 +132,7 @@ export default function TrackingPage() {
       flags: [],
       original: null,
       openFoodFacts: null,
+      blsBasis: null,
       feedingType: 'pre',
       feedingDetails: {
         brand,
@@ -169,6 +171,7 @@ export default function TrackingPage() {
       flags: [],
       original: null,
       openFoodFacts: null,
+      blsBasis: null,
       feedingType: 'breastfeeding',
       feedingDetails: {
         durationMin,
@@ -322,6 +325,7 @@ export default function TrackingPage() {
       aiFlags: analysis?.flags || [],
       aiOriginal: analysis?.original || null,
       aiOpenFoodFacts: analysis?.openFoodFacts || null,
+      aiBlsBasis: analysis?.blsBasis || null,
       feedingType: analysis?.feedingType || null,
       feedingDetails: analysis?.feedingDetails || null,
       notes,
@@ -623,6 +627,12 @@ export default function TrackingPage() {
                   OpenFoodFacts Treffer: {analysis.openFoodFacts.sampleSize || 0}
                 </p>
               )}
+              {analysis.blsBasis?.matched && (
+                <p className="text-xs text-gray-500 mb-2">
+                  BLS-Basis (DE): {analysis.blsBasis.nameDe}
+                  <span className="text-gray-400"> · {analysis.blsBasis.code}</span>
+                </p>
+              )}
               {analysis.flags?.length > 0 && (
                 <div className="space-y-1.5">
                   {analysis.flags.map((flag, i) => (
@@ -647,6 +657,30 @@ export default function TrackingPage() {
                   { label: 'Fett', value: analysis.openFoodFacts.referencePer100g.fat, unit: 'g' },
                 ].map((item) => (
                   <div key={item.label} className="rounded-lg bg-sky-50 px-3 py-2">
+                    <p className="text-[11px] text-gray-500">{item.label}</p>
+                    <p className="text-sm font-semibold text-gray-700">
+                      {item.value != null ? Math.round(item.value) : '-'} {item.value != null ? item.unit : ''}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {analysis.blsBasis?.matched && analysis.blsBasis.referencePer100g && (
+            <div className="bg-white border border-emerald-200 rounded-xl p-4">
+              <p className="text-sm font-semibold text-gray-700 mb-1">BLS-Basis Referenz (pro 100g)</p>
+              <p className="text-[11px] text-gray-500 mb-2">
+                Abgleich mit Teilmenge BLS 4.0 (MRI, CC BY 4.0). Keine Garantie für exakten Treffer.
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { label: 'Kalorien', value: analysis.blsBasis.referencePer100g.calories, unit: 'kcal' },
+                  { label: 'Protein', value: analysis.blsBasis.referencePer100g.protein, unit: 'g' },
+                  { label: 'Kohlenhydrate', value: analysis.blsBasis.referencePer100g.carbs, unit: 'g' },
+                  { label: 'Fett', value: analysis.blsBasis.referencePer100g.fat, unit: 'g' },
+                ].map((item) => (
+                  <div key={item.label} className="rounded-lg bg-emerald-50 px-3 py-2">
                     <p className="text-[11px] text-gray-500">{item.label}</p>
                     <p className="text-sm font-semibold text-gray-700">
                       {item.value != null ? Math.round(item.value) : '-'} {item.value != null ? item.unit : ''}
