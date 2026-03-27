@@ -51,14 +51,16 @@ export default function DetectivePage() {
     setAiLoading(true);
     setAiError(null);
     try {
-      const result = await analyzeWithAI(childMeals, childSymptoms, activeChild.name);
+      const result = await analyzeWithAI(childMeals, childSymptoms, activeChild.name, {
+        adultNutrition: state.adultNutrition,
+      });
       setAiAnalysis(result);
     } catch (err) {
       setAiError(err.message);
     } finally {
       setAiLoading(false);
     }
-  }, [activeChild, childMeals, childSymptoms]);
+  }, [activeChild, childMeals, childSymptoms, state.adultNutrition]);
 
   const getConfidenceColor = (confidence) => {
     if (confidence >= 70) return 'bg-rose-500';

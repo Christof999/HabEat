@@ -25,6 +25,7 @@ export default function TrackingPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         imageBase64: base64Image,
+        adultNutrition: state.adultNutrition,
         childContext: {
           allergies: activeChild?.allergies || [],
         },

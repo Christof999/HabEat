@@ -76,7 +76,10 @@ function toFiniteNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
-async function fetchOpenFoodFactsReference(meal) {
+async function fetchOpenFoodFactsReference(meal, options = {}) {
+  const estimatedPortionGrams = Number.isFinite(Number(options.estimatedPortionGrams))
+    ? Math.max(50, Math.round(Number(options.estimatedPortionGrams)))
+    : 150;
   const queryParts = [meal.title, ...(meal.ingredients || []).slice(0, 3)]
     .map((item) => String(item || '').trim())
     .filter(Boolean);
@@ -125,7 +128,7 @@ async function fetchOpenFoodFactsReference(meal) {
       query: searchTerms,
       sampleSize: 0,
       referencePer100g: null,
-      estimatedPortionGrams: 150,
+      estimatedPortionGrams,
     };
   }
 
@@ -145,7 +148,7 @@ async function fetchOpenFoodFactsReference(meal) {
       carbs: avg('carbsPer100g'),
       fat: avg('fatPer100g'),
     },
-    estimatedPortionGrams: 150,
+    estimatedPortionGrams,
   };
 }
 
@@ -231,7 +234,8 @@ app.get('/api/health', (req, res) => {
 });
 
 app.post('/api/meals/verify', async (req, res) => {
-  const { imageBase64, childContext } = req.body || {};
+  const { imageBase64, childContext, adultNutrition } = req.body || {};
+  const adultMode = adultNutrition === true;
 
   if (!imageBase64 || typeof imageBase64 !== 'string') {
     return res.status(400).json({ error: 'imageBase64 fehlt oder ist ungültig.' });
@@ -241,10 +245,27 @@ app.post('/api/meals/verify', async (req, res) => {
   const imageData = imageBase64.replace(/^data:image\/\w+;base64,/, '');
 
   const allergyText = Array.isArray(childContext?.allergies) && childContext.allergies.length > 0
-    ? `Bekannte Allergien/Unverträglichkeiten des Kindes: ${childContext.allergies.join(', ')}.`
+    ? (adultMode
+      ? `Bekannte Allergien/Unverträglichkeiten: ${childContext.allergies.join(', ')}.`
+      : `Bekannte Allergien/Unverträglichkeiten des Kindes: ${childContext.allergies.join(', ')}.`)
     : 'Keine bekannten Allergien übergeben.';
 
-  const primaryPrompt = `Du bist Ernährungsexperte für Kleinkinder. Analysiere das Mahlzeitenfoto.
+  const primaryPrompt = adultMode
+    ? `Du bist Ernährungsexperte. Analysiere das Mahlzeitenfoto für eine erwachsene Person: realistische Portionsgröße wie auf dem Foto, keine Anpassung an Kleinkind-Bedarf oder -Portionen, keine altersbezogenen WHO-/Referenzwerte für Kinder.
+${allergyText}
+
+Gib NUR JSON ohne Markdown zurück:
+{
+  "title": "Bezeichnung der Mahlzeit",
+  "ingredients": ["Zutat1", "Zutat2"],
+  "calories": 0,
+  "protein": 0,
+  "carbs": 0,
+  "fat": 0,
+  "summary": "Kurze Bewertung in 1 Satz",
+  "allergens": ["nur erkannte Allergene"]
+}`
+    : `Du bist Ernährungsexperte für Kleinkinder. Analysiere das Mahlzeitenfoto.
 ${allergyText}
 
 Gib NUR JSON ohne Markdown zurück:
@@ -270,6 +291,7 @@ Gib NUR JSON ohne Markdown zurück:
 
     const verifyPrompt = `Du bist ein strenger Qualitätsprüfer für Ernährungsdaten.
 Prüfe die Primäranalyse auf Plausibilität und korrigiere nur bei klaren Widersprüchen.
+${adultMode ? 'Kontext: Mahlzeit und Nährwerte für eine erwachsene Portionsgröße (keine Kleinkind-Annahmen, keine Kinder-Referenzkurven).' : ''}
 
 Primäranalyse:
 ${JSON.stringify(primaryMeal)}
@@ -303,7 +325,9 @@ Antworte NUR als JSON ohne Markdown:
     let flags = localFlags;
 
     try {
-      openFoodFacts = await fetchOpenFoodFactsReference(verifyResult.verifiedMeal);
+      openFoodFacts = await fetchOpenFoodFactsReference(verifyResult.verifiedMeal, {
+        estimatedPortionGrams: adultMode ? 300 : 150,
+      });
       flags = appendOpenFoodFactsFlags(verifyResult.verifiedMeal, openFoodFacts, localFlags);
     } catch (offErr) {
       flags = [...new Set([...localFlags, 'OpenFoodFacts-Check konnte nicht durchgeführt werden.'])];
@@ -312,7 +336,7 @@ Antworte NUR als JSON ohne Markdown:
         query: verifyResult.verifiedMeal.title,
         sampleSize: 0,
         referencePer100g: null,
-        estimatedPortionGrams: 150,
+        estimatedPortionGrams: adultMode ? 300 : 150,
         error: offErr.message,
       };
     }

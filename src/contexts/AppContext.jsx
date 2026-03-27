@@ -4,12 +4,15 @@ import {
   saveSymptom, removeSymptom as removeSymptomFromDb,
   saveUserSettings, subscribeToUserData,
 } from '../lib/firestore';
+import { isAdultNutritionUser } from '../lib/userProfile';
 
 const AppContext = createContext(null);
 
 const initialState = {
   loggedIn: false,
   currentUser: null,
+  /** Beim Login gesetzt: Ernährungs-KI ohne Kleinkind-Fokus (Thomas, Martina). */
+  adultNutrition: false,
   onboardingComplete: false,
   children: [],
   activeChildId: null,
@@ -53,6 +56,7 @@ function appReducer(state, action) {
         ...initialState,
         loggedIn: true,
         currentUser: action.payload.username,
+        adultNutrition: isAdultNutritionUser(action.payload.username),
       };
 
     case 'LOGOUT':
@@ -207,7 +211,9 @@ export function AppProvider({ children: reactChildren }) {
           ? parsed.activeChildId
           : children[0]?.id || null;
 
-        return { ...init, ...parsed, children, activeChildId };
+        const merged = { ...init, ...parsed, children, activeChildId };
+        merged.adultNutrition = merged.loggedIn && isAdultNutritionUser(merged.currentUser);
+        return merged;
       } catch {
         return init;
       }

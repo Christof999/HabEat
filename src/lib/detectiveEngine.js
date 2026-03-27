@@ -173,8 +173,10 @@ function getSymptomLabel(type) {
 
 /**
  * Schickt die Daten an Gemini für eine intelligente Analyse.
+ * @param {{ adultNutrition?: boolean }} [options] — ohne Kleinkind-Fokus (z. B. Thomas/Martina)
  */
-export async function analyzeWithAI(meals, symptoms, childName) {
+export async function analyzeWithAI(meals, symptoms, childName, options = {}) {
+  const adult = options.adultNutrition === true;
   const last3Days = 3 * 24 * 60 * 60 * 1000;
   const recentMeals = meals
     .filter(m => Date.now() - new Date(m.timestamp).getTime() <= last3Days)
@@ -197,7 +199,32 @@ export async function analyzeWithAI(meals, symptoms, childName) {
     return null;
   }
 
-  const prompt = `Du bist ein Ernährungsberater-Assistent für Kleinkinder. Analysiere die folgenden Daten für das Kind "${childName}".
+  const prompt = adult
+    ? `Du bist ein Ernährungsberater-Assistent. Analysiere die folgenden Daten für "${childName}" (Erwachsenen-Kontext: keine Kleinkind-Annahmen, keine WHO-/Perzentil- oder altersbezogenen Kinder-Referenzwerte).
+
+WICHTIG: Du bist KEIN Arzt. Gib keine Diagnosen ab. Formuliere vorsichtige Vermutungen.
+
+Mahlzeiten der letzten 3 Tage:
+${JSON.stringify(recentMeals, null, 2)}
+
+Symptome der letzten 3 Tage:
+${JSON.stringify(recentSymptoms, null, 2)}
+
+Analysiere:
+1. Gibt es verdächtige zeitliche Zusammenhänge zwischen bestimmten Zutaten und Symptomen?
+2. Achte besonders auf versteckte Allergene (z.B. Gluten in Sojasauce, Milcheiweiß in Gebäck, Ei in Nudeln).
+3. Gibt es Muster bei den Tageszeiten?
+
+Antworte auf Deutsch in diesem JSON-Format:
+{
+  "summary": "Kurze Zusammenfassung (1-2 Sätze)",
+  "suspectedIngredients": [{"name": "Zutat", "reason": "Begründung"}],
+  "hiddenAllergens": ["Liste versteckter Allergene die in den Mahlzeiten sein könnten"],
+  "recommendation": "Empfehlung (z. B. was beim nächsten Arztbesuch ansprechen)"
+}
+
+Antworte NUR mit dem JSON, ohne Markdown-Formatierung.`
+    : `Du bist ein Ernährungsberater-Assistent für Kleinkinder. Analysiere die folgenden Daten für das Kind "${childName}".
 
 WICHTIG: Du bist KEIN Arzt. Gib keine Diagnosen ab. Formuliere vorsichtige Vermutungen.
 
