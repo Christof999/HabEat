@@ -8,7 +8,7 @@ const VALID_USERS = [
   { username: 'Teste', password: 'Admin' },
   { username: 'Svenja', password: 'Admin' },
   { username: 'Felix', password: 'Admin' },
-  { username: 'Thomas', password: 'adin' },
+  { username: 'Thomas', password: 'admin' },
   { username: 'Martina', password: 'admin' },
 ];
 
