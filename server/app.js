@@ -6,6 +6,12 @@ const app = express();
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 const OPEN_FOOD_FACTS_SEARCH_URL = 'https://world.openfoodfacts.org/cgi/search.pl';
+/** Open Food Facts verlangt einen erkennbaren User-Agent (sonst oft 403/Block). */
+const OPEN_FOOD_FACTS_HEADERS = {
+  Accept: 'application/json',
+  'User-Agent': 'HabEat/1.0 (https://github.com/Christof999/HabEat; meal-tracking; de)',
+};
+const OFF_FETCH_TIMEOUT_MS = 18_000;
 
 /** Makro-Kalorien-Abweichung: Flag ab diesem Anteil, schärferer Hinweis darüber */
 const MACRO_KCAL_TOLERANCE = 0.35;
@@ -161,11 +167,14 @@ function toFiniteNumber(value) {
 async function fetchOffJsonWithRetry(urlString) {
   let lastErr;
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    if (attempt > 0) await sleep(280 * attempt);
+    if (attempt > 0) await sleep(400 * attempt);
     try {
-      const response = await fetch(urlString);
+      const response = await fetch(urlString, {
+        headers: OPEN_FOOD_FACTS_HEADERS,
+        signal: AbortSignal.timeout(OFF_FETCH_TIMEOUT_MS),
+      });
       if (response.ok) return response.json();
-      if ([429, 502, 503].includes(response.status) && attempt < 2) {
+      if ([408, 429, 500, 502, 503, 504].includes(response.status) && attempt < 2) {
         lastErr = new Error(`OpenFoodFacts Fehler: ${response.status}`);
         continue;
       }
@@ -173,10 +182,17 @@ async function fetchOffJsonWithRetry(urlString) {
     } catch (err) {
       lastErr = err;
       const m = String(err?.message || '');
-      const retryable = m.includes('fetch')
+      const name = err?.name || '';
+      const retryable = name === 'AbortError'
+        || name === 'TimeoutError'
+        || m.includes('fetch')
+        || m.includes('network')
+        || m.includes('OpenFoodFacts Fehler: 408')
         || m.includes('OpenFoodFacts Fehler: 429')
+        || m.includes('OpenFoodFacts Fehler: 500')
         || m.includes('OpenFoodFacts Fehler: 502')
-        || m.includes('OpenFoodFacts Fehler: 503');
+        || m.includes('OpenFoodFacts Fehler: 503')
+        || m.includes('OpenFoodFacts Fehler: 504');
       if (attempt < 2 && retryable) continue;
       throw err;
     }
