@@ -1,37 +1,42 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Camera, Image, Sparkles, Loader2, MapPin, StickyNote, Check, AlertCircle } from 'lucide-react';
+import {
+  ArrowLeft, Camera, Image, Sparkles, Loader2, MapPin, StickyNote, Check, AlertCircle, AlignLeft,
+} from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 
 export default function TrackingPage() {
   const { state, dispatch, activeChild } = useApp();
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
+  const titleRef = useRef(null);
 
-  const [step, setStep] = useState('capture'); // capture, analyzing, review
+  const [step, setStep] = useState('capture'); // capture, textDescribe, analyzing, review
   const [imagePreview, setImagePreview] = useState(null);
   const [analysis, setAnalysis] = useState(null);
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
+  const [kiContext, setKiContext] = useState('');
+  const [textDescribeInput, setTextDescribeInput] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isRefining, setIsRefining] = useState(false);
   const [analyzeError, setAnalyzeError] = useState(null);
   const [quickType, setQuickType] = useState(null);
   const [preForm, setPreForm] = useState({ brand: '', preparedMl: '', consumedMl: '', comment: '' });
   const [breastForm, setBreastForm] = useState({ durationMin: '', side: 'links', comment: '' });
 
-  const runMealVerification = async (base64Image) => {
-    const response = await fetch('/api/meals/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        imageBase64: base64Image,
-        adultNutrition: state.adultNutrition,
-        childContext: {
-          allergies: activeChild?.allergies || [],
-        },
-      }),
-    });
+  const adjustTitleHeight = useCallback(() => {
+    const el = titleRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(Math.max(el.scrollHeight, 48), 280)}px`;
+  }, []);
 
+  useEffect(() => {
+    if (step === 'review') adjustTitleHeight();
+  }, [title, step, adjustTitleHeight]);
+
+  const parseApiResponse = async (response) => {
     const raw = await response.text();
     let data = null;
     try {
@@ -39,16 +44,47 @@ export default function TrackingPage() {
     } catch {
       data = null;
     }
-
     if (!response.ok) {
       throw new Error(data?.error || raw || `API Fehler: ${response.status}`);
     }
-
     if (!data) {
       throw new Error('API Antwort konnte nicht gelesen werden.');
     }
-
     return data;
+  };
+
+  const callVerifyApi = async (extraBody) => {
+    const response = await fetch('/api/meals/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        adultNutrition: state.adultNutrition,
+        childContext: {
+          allergies: activeChild?.allergies || [],
+        },
+        ...extraBody,
+      }),
+    });
+    return parseApiResponse(response);
+  };
+
+  const applyVerifiedResult = (data) => {
+    const parsed = data.corrected || data.analysis;
+    setAnalysis({
+      title: parsed.title || 'Mahlzeit',
+      ingredients: parsed.ingredients || [],
+      calories: parsed.calories ?? 0,
+      protein: parsed.protein ?? 0,
+      carbs: parsed.carbs ?? 0,
+      fat: parsed.fat ?? 0,
+      summary: parsed.summary || '',
+      allergens: parsed.allergens || [],
+      confidence: data.confidence ?? null,
+      flags: data.flags || [],
+      original: data.analysis || null,
+      openFoodFacts: data.openFoodFacts || null,
+    });
+    setTitle(parsed.title || 'Mahlzeit');
   };
 
   const parseNumber = (value) => {
@@ -102,6 +138,7 @@ export default function TrackingPage() {
     });
     setNotes(preForm.comment.trim());
     setTitle(brand ? `Pre-Nahrung (${brand})` : 'Pre-Nahrung');
+    setKiContext('');
     setStep('review');
     setQuickType(null);
   };
@@ -139,6 +176,7 @@ export default function TrackingPage() {
     });
     setNotes(breastForm.comment.trim());
     setTitle('Stillen');
+    setKiContext('');
     setStep('review');
     setQuickType(null);
   };
@@ -185,26 +223,11 @@ export default function TrackingPage() {
     setStep('analyzing');
     setIsAnalyzing(true);
     setAnalyzeError(null);
+    setKiContext('');
 
     try {
-      const verified = await runMealVerification(base64Image);
-      const parsed = verified.corrected || verified.analysis;
-
-      setAnalysis({
-        title: parsed.title || 'Mahlzeit',
-        ingredients: parsed.ingredients || [],
-        calories: parsed.calories || 0,
-        protein: parsed.protein || 0,
-        carbs: parsed.carbs || 0,
-        fat: parsed.fat || 0,
-        summary: parsed.summary || '',
-        allergens: parsed.allergens || [],
-        confidence: verified.confidence ?? null,
-        flags: verified.flags || [],
-        original: verified.analysis || null,
-        openFoodFacts: verified.openFoodFacts || null,
-      });
-      setTitle(parsed.title || 'Mahlzeit');
+      const verified = await callVerifyApi({ imageBase64: base64Image });
+      applyVerifiedResult(verified);
       setIsAnalyzing(false);
       setStep('review');
     } catch (err) {
@@ -212,6 +235,66 @@ export default function TrackingPage() {
       setIsAnalyzing(false);
       setAnalyzeError(err.message);
       setStep('capture');
+    }
+  };
+
+  const runTextAnalysis = async () => {
+    const t = textDescribeInput.trim();
+    if (t.length < 10) {
+      setAnalyzeError('Bitte beschreibe die Mahlzeit etwas ausführlicher (mindestens 10 Zeichen).');
+      return;
+    }
+    setStep('analyzing');
+    setIsAnalyzing(true);
+    setAnalyzeError(null);
+    setImagePreview(null);
+    setKiContext('');
+
+    try {
+      const verified = await callVerifyApi({ mealDescription: t });
+      applyVerifiedResult(verified);
+      setTextDescribeInput('');
+      setIsAnalyzing(false);
+      setStep('review');
+    } catch (err) {
+      console.error('Text meal verification failed:', err);
+      setIsAnalyzing(false);
+      setAnalyzeError(err.message);
+      setStep('textDescribe');
+    }
+  };
+
+  const runRefinement = async () => {
+    if (!analysis) return;
+    const ctx = kiContext.trim();
+    if (ctx.length < 3) {
+      setAnalyzeError('Kontext für die KI: bitte mindestens 3 Zeichen.');
+      return;
+    }
+    setAnalyzeError(null);
+    setIsRefining(true);
+    try {
+      const previousMeal = {
+        title: (title.trim() || analysis.title || 'Mahlzeit').slice(0, 120),
+        ingredients: analysis.ingredients || [],
+        calories: Number(analysis.calories) || 0,
+        protein: Number(analysis.protein) || 0,
+        carbs: Number(analysis.carbs) || 0,
+        fat: Number(analysis.fat) || 0,
+        summary: (analysis.summary || '').slice(0, 500),
+        allergens: analysis.allergens || [],
+      };
+      const verified = await callVerifyApi({
+        previousMeal,
+        userContext: ctx.slice(0, 2000),
+      });
+      applyVerifiedResult(verified);
+      setKiContext('');
+    } catch (err) {
+      console.error('Refine meal failed:', err);
+      setAnalyzeError(err.message);
+    } finally {
+      setIsRefining(false);
     }
   };
 
@@ -246,7 +329,15 @@ export default function TrackingPage() {
       {/* Header */}
       <div className="sticky top-0 bg-warm-50/80 backdrop-blur-sm z-10 px-6 py-4 flex items-center gap-3">
         <button
-          onClick={() => navigate(-1)}
+          type="button"
+          onClick={() => {
+            if (step === 'textDescribe') {
+              setStep('capture');
+              setAnalyzeError(null);
+            } else {
+              navigate(-1);
+            }
+          }}
           className="w-10 h-10 rounded-xl bg-white shadow-sm flex items-center justify-center cursor-pointer"
         >
           <ArrowLeft className="w-5 h-5 text-gray-600" />
@@ -277,6 +368,7 @@ export default function TrackingPage() {
           )}
 
           <button
+            type="button"
             onClick={() => handleCapture('camera')}
             className="w-full bg-white rounded-2xl p-6 shadow-sm flex items-center gap-4 hover:shadow-md transition cursor-pointer"
           >
@@ -290,6 +382,7 @@ export default function TrackingPage() {
           </button>
 
           <button
+            type="button"
             onClick={() => handleCapture('gallery')}
             className="w-full bg-white rounded-2xl p-6 shadow-sm flex items-center gap-4 hover:shadow-md transition cursor-pointer"
           >
@@ -299,6 +392,24 @@ export default function TrackingPage() {
             <div className="text-left">
               <h3 className="font-semibold text-gray-800">Galerie</h3>
               <p className="text-sm text-gray-500">Ein vorhandenes Foto auswählen</p>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setAnalyzeError(null);
+              setTextDescribeInput('');
+              setStep('textDescribe');
+            }}
+            className="w-full bg-white rounded-2xl p-6 shadow-sm flex items-center gap-4 hover:shadow-md transition cursor-pointer border border-dashed border-sage-200"
+          >
+            <div className="w-14 h-14 rounded-xl bg-warm-100 flex items-center justify-center">
+              <AlignLeft className="w-6 h-6 text-warm-700" />
+            </div>
+            <div className="text-left">
+              <h3 className="font-semibold text-gray-800">Nur Text</h3>
+              <p className="text-sm text-gray-500">Mahlzeit beschreiben – ohne Foto</p>
             </div>
           </button>
 
@@ -399,6 +510,38 @@ export default function TrackingPage() {
         </div>
       )}
 
+      {/* Step: Textbeschreibung */}
+      {step === 'textDescribe' && (
+        <div className="px-6 py-8 space-y-4">
+          <p className="text-sm text-gray-600">
+            Beschreibe Gericht, ungefähre Menge und Zubereitung – die KI schätzt daraus Zutaten und Nährwerte (wie bei einer Fotoanalyse).
+          </p>
+          {analyzeError && (
+            <div className="flex items-center gap-2 px-4 py-3 bg-rose-50 border border-rose-200 rounded-xl">
+              <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+              <p className="text-sm text-rose-600">{analyzeError}</p>
+            </div>
+          )}
+          <textarea
+            value={textDescribeInput}
+            onChange={(e) => { setTextDescribeInput(e.target.value); setAnalyzeError(null); }}
+            rows={6}
+            placeholder="z. B. Ca. halber Teller Vollkornnudeln mit Tomatensoße und geriebenem Parmesan, dazu ein kleiner Salat mit Öl …"
+            className="w-full px-4 py-3 rounded-2xl bg-white border border-sage-200 focus:outline-none focus:ring-2 focus:ring-sage-300 text-gray-800 placeholder:text-gray-400 resize-y min-h-[140px]"
+          />
+          <p className="text-xs text-gray-400">Mindestens 10 Zeichen.</p>
+          <button
+            type="button"
+            onClick={runTextAnalysis}
+            disabled={textDescribeInput.trim().length < 10}
+            className="w-full bg-sage-500 hover:bg-sage-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3.5 rounded-2xl transition-colors flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+          >
+            <Sparkles className="w-5 h-5" />
+            Mit KI auswerten
+          </button>
+        </div>
+      )}
+
       {/* Step: Analyzing */}
       {step === 'analyzing' && isAnalyzing && (
         <div className="px-6 py-12 flex flex-col items-center gap-6">
@@ -414,7 +557,9 @@ export default function TrackingPage() {
             <div className="text-center">
               <h3 className="font-semibold text-gray-800">Analyse läuft...</h3>
               <p className="text-sm text-gray-500 mt-1">
-                KI erkennt Zutaten und Nährstoffe
+                {imagePreview
+                  ? 'KI erkennt Zutaten und Nährwerte'
+                  : 'KI wertet deine Beschreibung aus'}
               </p>
             </div>
           </div>
@@ -434,8 +579,17 @@ export default function TrackingPage() {
           {/* AI Badge */}
           <div className="flex items-center gap-2 px-3 py-1.5 bg-sage-50 rounded-full w-fit">
             <Sparkles className="w-3.5 h-3.5 text-sage-600" />
-            <span className="text-xs font-medium text-sage-700">KI-Analyse abgeschlossen</span>
+            <span className="text-xs font-medium text-sage-700">
+              {analysis.feedingType ? 'Erfassung' : 'KI-Analyse abgeschlossen'}
+            </span>
           </div>
+
+          {analyzeError && (
+            <div className="flex items-center gap-2 px-4 py-3 bg-rose-50 border border-rose-200 rounded-xl">
+              <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+              <p className="text-sm text-rose-600">{analyzeError}</p>
+            </div>
+          )}
 
           {(analysis.confidence != null || analysis.flags?.length > 0) && (
             <div className="bg-white border border-sage-200 rounded-xl p-4">
@@ -483,14 +637,19 @@ export default function TrackingPage() {
             </div>
           )}
 
-          {/* Title */}
+          {/* Title (wächst mit Inhalt) */}
           <div>
             <label className="text-sm font-medium text-gray-700 mb-2 block">Bezeichnung</label>
-            <input
-              type="text"
+            <textarea
+              ref={titleRef}
               value={title}
-              onChange={e => setTitle(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl bg-white border border-sage-200 focus:outline-none focus:ring-2 focus:ring-sage-300 transition text-gray-800"
+              onChange={(e) => {
+                setTitle(e.target.value);
+                requestAnimationFrame(() => adjustTitleHeight());
+              }}
+              rows={1}
+              placeholder="Name der Mahlzeit"
+              className="w-full px-4 py-3 rounded-xl bg-white border border-sage-200 focus:outline-none focus:ring-2 focus:ring-sage-300 transition text-gray-800 resize-none overflow-hidden min-h-[48px] leading-snug"
             />
           </div>
 
@@ -505,11 +664,21 @@ export default function TrackingPage() {
               <div key={n.label} className={`${n.bg} rounded-xl p-3`}>
                 <span className="text-xs text-gray-500">{n.label}</span>
                 <p className="text-lg font-bold text-gray-800 mt-0.5">
-                  {n.value} <span className="text-sm font-normal text-gray-400">{n.unit}</span>
+                  {n.value != null ? n.value : '—'}{' '}
+                  <span className="text-sm font-normal text-gray-400">
+                    {n.value != null ? n.unit : ''}
+                  </span>
                 </p>
               </div>
             ))}
           </div>
+
+          {analysis.summary ? (
+            <div className="rounded-xl bg-gray-50 border border-gray-100 px-4 py-3">
+              <p className="text-xs font-medium text-gray-500 mb-1">Kurzfassung</p>
+              <p className="text-sm text-gray-700">{analysis.summary}</p>
+            </div>
+          ) : null}
 
           {/* Ingredients */}
           {analysis.ingredients.length > 0 && (
@@ -539,6 +708,46 @@ export default function TrackingPage() {
                   </span>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* KI-Kontext (nur bei KI-/Text-Mahlzeiten) */}
+          {!analysis.feedingType && (
+            <div className="bg-white border border-sage-200 rounded-xl p-4 space-y-3">
+              <div>
+                <label className="text-sm font-semibold text-gray-800 block mb-1">
+                  Kontext für die KI
+                </label>
+                <p className="text-xs text-gray-500 mb-2">
+                  Ergänzungen oder Korrekturen (z. B. verdeckte Soße, zweite Zutat außerhalb des Fotos). Wird an die KI geschickt und die Schätzung neu berechnet.
+                </p>
+                <textarea
+                  value={kiContext}
+                  onChange={(e) => { setKiContext(e.target.value); setAnalyzeError(null); }}
+                  rows={3}
+                  disabled={isRefining}
+                  placeholder="z. B. Unter der Soße liegt noch Fisch, Portion war eher groß …"
+                  className="w-full px-3 py-2 rounded-xl bg-warm-50 border border-sage-200 text-sm text-gray-800 placeholder:text-gray-400 resize-y disabled:opacity-60"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={runRefinement}
+                disabled={isRefining || kiContext.trim().length < 3}
+                className="w-full bg-sky-600 hover:bg-sky-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {isRefining ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Überarbeite …
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4" />
+                    Mit Kontext neu auswerten
+                  </>
+                )}
+              </button>
             </div>
           )}
 

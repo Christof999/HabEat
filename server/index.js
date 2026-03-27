@@ -229,67 +229,22 @@ async function callGemini(parts, temperature = 0.2) {
   return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 }
 
-app.get('/api/health', (req, res) => {
-  res.json({ ok: true });
-});
-
-app.post('/api/meals/verify', async (req, res) => {
-  const { imageBase64, childContext, adultNutrition } = req.body || {};
-  const adultMode = adultNutrition === true;
-
-  if (!imageBase64 || typeof imageBase64 !== 'string') {
-    return res.status(400).json({ error: 'imageBase64 fehlt oder ist ungültig.' });
-  }
-
-  const mimeType = imageBase64.startsWith('data:image/png') ? 'image/png' : 'image/jpeg';
-  const imageData = imageBase64.replace(/^data:image\/\w+;base64,/, '');
-
-  const allergyText = Array.isArray(childContext?.allergies) && childContext.allergies.length > 0
-    ? (adultMode
+function buildAllergyText(childContext, adultMode) {
+  if (Array.isArray(childContext?.allergies) && childContext.allergies.length > 0) {
+    return adultMode
       ? `Bekannte Allergien/Unverträglichkeiten: ${childContext.allergies.join(', ')}.`
-      : `Bekannte Allergien/Unverträglichkeiten des Kindes: ${childContext.allergies.join(', ')}.`)
-    : 'Keine bekannten Allergien übergeben.';
+      : `Bekannte Allergien/Unverträglichkeiten des Kindes: ${childContext.allergies.join(', ')}.`;
+  }
+  return 'Keine bekannten Allergien übergeben.';
+}
 
-  const primaryPrompt = adultMode
-    ? `Du bist Ernährungsexperte. Analysiere das Mahlzeitenfoto für eine erwachsene Person: realistische Portionsgröße wie auf dem Foto, keine Anpassung an Kleinkind-Bedarf oder -Portionen, keine altersbezogenen WHO-/Referenzwerte für Kinder.
-${allergyText}
+function parseGeminiMealJson(raw) {
+  const primaryParsed = JSON.parse(cleanJsonText(raw));
+  return mealSchema.parse(sanitizeMeal(primaryParsed));
+}
 
-Gib NUR JSON ohne Markdown zurück:
-{
-  "title": "Bezeichnung der Mahlzeit",
-  "ingredients": ["Zutat1", "Zutat2"],
-  "calories": 0,
-  "protein": 0,
-  "carbs": 0,
-  "fat": 0,
-  "summary": "Kurze Bewertung in 1 Satz",
-  "allergens": ["nur erkannte Allergene"]
-}`
-    : `Du bist Ernährungsexperte für Kleinkinder. Analysiere das Mahlzeitenfoto.
-${allergyText}
-
-Gib NUR JSON ohne Markdown zurück:
-{
-  "title": "Bezeichnung der Mahlzeit",
-  "ingredients": ["Zutat1", "Zutat2"],
-  "calories": 0,
-  "protein": 0,
-  "carbs": 0,
-  "fat": 0,
-  "summary": "Kurze Bewertung in 1 Satz",
-  "allergens": ["nur erkannte Allergene"]
-}`;
-
-  try {
-    const primaryRaw = await callGemini([
-      { text: primaryPrompt },
-      { inline_data: { mime_type: mimeType, data: imageData } },
-    ], 0.2);
-
-    const primaryParsed = JSON.parse(cleanJsonText(primaryRaw));
-    const primaryMeal = mealSchema.parse(sanitizeMeal(primaryParsed));
-
-    const verifyPrompt = `Du bist ein strenger Qualitätsprüfer für Ernährungsdaten.
+async function runPostPrimaryPipeline(primaryMeal, adultMode) {
+  const verifyPrompt = `Du bist ein strenger Qualitätsprüfer für Ernährungsdaten.
 Prüfe die Primäranalyse auf Plausibilität und korrigiere nur bei klaren Widersprüchen.
 ${adultMode ? 'Kontext: Mahlzeit und Nährwerte für eine erwachsene Portionsgröße (keine Kleinkind-Annahmen, keine Kinder-Referenzkurven).' : ''}
 
@@ -312,42 +267,188 @@ Antworte NUR als JSON ohne Markdown:
   "flags": ["Liste konkreter Prüfhinweise"]
 }`;
 
-    const verifyRaw = await callGemini([{ text: verifyPrompt }], 0.1);
-    const verifyParsed = JSON.parse(cleanJsonText(verifyRaw));
-    const verifyResult = verifyResponseSchema.parse({
-      ...verifyParsed,
-      verifiedMeal: sanitizeMeal(verifyParsed.verifiedMeal),
+  const verifyRaw = await callGemini([{ text: verifyPrompt }], 0.1);
+  const verifyParsed = JSON.parse(cleanJsonText(verifyRaw));
+  const verifyResult = verifyResponseSchema.parse({
+    ...verifyParsed,
+    verifiedMeal: sanitizeMeal(verifyParsed.verifiedMeal),
+  });
+
+  const localFlags = runLocalChecks(primaryMeal, verifyResult.verifiedMeal, verifyResult.flags || []);
+
+  let openFoodFacts = null;
+  let flags = localFlags;
+
+  try {
+    openFoodFacts = await fetchOpenFoodFactsReference(verifyResult.verifiedMeal, {
+      estimatedPortionGrams: adultMode ? 300 : 150,
     });
+    flags = appendOpenFoodFactsFlags(verifyResult.verifiedMeal, openFoodFacts, localFlags);
+  } catch (offErr) {
+    flags = [...new Set([...localFlags, 'OpenFoodFacts-Check konnte nicht durchgeführt werden.'])];
+    openFoodFacts = {
+      matched: false,
+      query: verifyResult.verifiedMeal.title,
+      sampleSize: 0,
+      referencePer100g: null,
+      estimatedPortionGrams: adultMode ? 300 : 150,
+      error: offErr.message,
+    };
+  }
 
-    const localFlags = runLocalChecks(primaryMeal, verifyResult.verifiedMeal, verifyResult.flags || []);
+  return {
+    analysis: primaryMeal,
+    corrected: verifyResult.verifiedMeal,
+    confidence: verifyResult.confidence,
+    flags,
+    openFoodFacts,
+    checkedAt: new Date().toISOString(),
+  };
+}
 
-    let openFoodFacts = null;
-    let flags = localFlags;
+function buildImagePrimaryPrompt(allergyText, adultMode) {
+  if (adultMode) {
+    return `Du bist Ernährungsexperte. Analysiere das Mahlzeitenfoto für eine erwachsene Person: realistische Portionsgröße wie auf dem Foto, keine Anpassung an Kleinkind-Bedarf oder -Portionen, keine altersbezogenen WHO-/Referenzwerte für Kinder.
+${allergyText}
 
-    try {
-      openFoodFacts = await fetchOpenFoodFactsReference(verifyResult.verifiedMeal, {
-        estimatedPortionGrams: adultMode ? 300 : 150,
-      });
-      flags = appendOpenFoodFactsFlags(verifyResult.verifiedMeal, openFoodFacts, localFlags);
-    } catch (offErr) {
-      flags = [...new Set([...localFlags, 'OpenFoodFacts-Check konnte nicht durchgeführt werden.'])];
-      openFoodFacts = {
-        matched: false,
-        query: verifyResult.verifiedMeal.title,
-        sampleSize: 0,
-        referencePer100g: null,
-        estimatedPortionGrams: adultMode ? 300 : 150,
-        error: offErr.message,
-      };
+Gib NUR JSON ohne Markdown zurück:
+{
+  "title": "Bezeichnung der Mahlzeit",
+  "ingredients": ["Zutat1", "Zutat2"],
+  "calories": 0,
+  "protein": 0,
+  "carbs": 0,
+  "fat": 0,
+  "summary": "Kurze Bewertung in 1 Satz",
+  "allergens": ["nur erkannte Allergene"]
+}`;
+  }
+  return `Du bist Ernährungsexperte für Kleinkinder. Analysiere das Mahlzeitenfoto.
+${allergyText}
+
+Gib NUR JSON ohne Markdown zurück:
+{
+  "title": "Bezeichnung der Mahlzeit",
+  "ingredients": ["Zutat1", "Zutat2"],
+  "calories": 0,
+  "protein": 0,
+  "carbs": 0,
+  "fat": 0,
+  "summary": "Kurze Bewertung in 1 Satz",
+  "allergens": ["nur erkannte Allergene"]
+}`;
+}
+
+async function runImageAnalysisPipeline(imageBase64, allergyText, adultMode) {
+  const mimeType = imageBase64.startsWith('data:image/png') ? 'image/png' : 'image/jpeg';
+  const imageData = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+  const primaryPrompt = buildImagePrimaryPrompt(allergyText, adultMode);
+  const primaryRaw = await callGemini([
+    { text: primaryPrompt },
+    { inline_data: { mime_type: mimeType, data: imageData } },
+  ], 0.2);
+  const primaryMeal = parseGeminiMealJson(primaryRaw);
+  return runPostPrimaryPipeline(primaryMeal, adultMode);
+}
+
+function buildTextPrimaryPrompt(mealDescription, allergyText, adultMode) {
+  const intro = adultMode
+    ? `Du bist Ernährungsexperte. Der Nutzer beschreibt eine Mahlzeit nur in Textform (kein Foto). Leite daraus ein realistisches Gericht mit sinnvoller Portionsgröße für eine erwachsene Person ab – keine Kleinkind-Portionen, keine WHO-/Kinder-Referenzwerte.`
+    : `Du bist Ernährungsexperte für Kleinkinder. Der Nutzer beschreibt eine Mahlzeit nur in Textform (kein Foto). Leite daraus ein realistisches Gericht mit altersgerechter Portionsgröße und Nährwerten ab.`;
+  return `${intro}
+${allergyText}
+
+Gib NUR JSON ohne Markdown zurück:
+{
+  "title": "Bezeichnung der Mahlzeit",
+  "ingredients": ["Zutat1", "Zutat2"],
+  "calories": 0,
+  "protein": 0,
+  "carbs": 0,
+  "fat": 0,
+  "summary": "Kurze Bewertung in 1 Satz",
+  "allergens": ["nur erkannte Allergene"]
+}
+
+Beschreibung der Mahlzeit:
+${mealDescription}`;
+}
+
+function buildRefinePrompt(previousMeal, userContext, allergyText, adultMode) {
+  const intro = adultMode
+    ? `Du bist Ernährungsexperte. Überarbeite die folgenden vorläufigen Mahlzeitendaten unter Einbeziehung des Nutzer-Kontexts (Korrekturen, Ergänzungen, Zubereitung, fehlende sichtbare Teile). Portionsgröße und Nährwerte für eine erwachsene Person, keine Kleinkind-Annahmen.`
+    : `Du bist Ernährungsexperte für Kleinkinder. Überarbeite die folgenden vorläufigen Mahlzeitendaten unter Einbeziehung des Nutzer-Kontexts (Korrekturen, Ergänzungen, Zubereitung, fehlende sichtbare Teile). Halte Nährwerte und Portionsannahme altersgerecht konsistent.`;
+  return `${intro}
+${allergyText}
+
+Vorläufige Daten (JSON):
+${JSON.stringify(previousMeal)}
+
+Nutzer-Kontext (Ergänzung oder Korrektur):
+${JSON.stringify(userContext)}
+
+Gib NUR JSON ohne Markdown zurück – gleiche Struktur wie oben:
+{
+  "title": "Bezeichnung der Mahlzeit",
+  "ingredients": ["Zutat1", "Zutat2"],
+  "calories": 0,
+  "protein": 0,
+  "carbs": 0,
+  "fat": 0,
+  "summary": "Kurze Bewertung in 1 Satz",
+  "allergens": ["nur erkannte Allergene"]
+}`;
+}
+
+app.get('/api/health', (req, res) => {
+  res.json({ ok: true });
+});
+
+app.post('/api/meals/verify', async (req, res) => {
+  const {
+    imageBase64,
+    mealDescription,
+    previousMeal,
+    userContext,
+    childContext,
+    adultNutrition,
+  } = req.body || {};
+  const adultMode = adultNutrition === true;
+  const allergyText = buildAllergyText(childContext, adultMode);
+
+  try {
+    const hasRefine = previousMeal != null && typeof previousMeal === 'object'
+      && typeof userContext === 'string' && userContext.trim().length >= 3;
+    if (hasRefine) {
+      const ctx = userContext.trim().slice(0, 2000);
+      const base = mealSchema.parse(sanitizeMeal(previousMeal));
+      const refineRaw = await callGemini([{ text: buildRefinePrompt(base, ctx, allergyText, adultMode) }], 0.2);
+      const refinedPrimary = parseGeminiMealJson(refineRaw);
+      const out = await runPostPrimaryPipeline(refinedPrimary, adultMode);
+      return res.json(out);
     }
 
-    return res.json({
-      analysis: primaryMeal,
-      corrected: verifyResult.verifiedMeal,
-      confidence: verifyResult.confidence,
-      flags,
-      openFoodFacts,
-      checkedAt: new Date().toISOString(),
+    const desc = typeof mealDescription === 'string' ? mealDescription.trim() : '';
+    if (desc.length > 0 && !imageBase64) {
+      if (desc.length < 10) {
+        return res.status(400).json({ error: 'Beschreibung zu kurz (mindestens 10 Zeichen).' });
+      }
+      const primaryRaw = await callGemini(
+        [{ text: buildTextPrimaryPrompt(desc.slice(0, 3000), allergyText, adultMode) }],
+        0.2,
+      );
+      const primaryMeal = parseGeminiMealJson(primaryRaw);
+      const out = await runPostPrimaryPipeline(primaryMeal, adultMode);
+      return res.json(out);
+    }
+
+    if (imageBase64 && typeof imageBase64 === 'string') {
+      const out = await runImageAnalysisPipeline(imageBase64, allergyText, adultMode);
+      return res.json(out);
+    }
+
+    return res.status(400).json({
+      error: 'Bitte ein Foto (imageBase64), eine Textbeschreibung (mealDescription) oder Überarbeitung (previousMeal + userContext) senden.',
     });
   } catch (err) {
     return res.status(500).json({ error: err.message || 'Analyse fehlgeschlagen.' });
