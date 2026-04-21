@@ -106,9 +106,9 @@ export default function AddChildForm({
       setPhotoError('Bitte wähle eine Bilddatei.');
       return;
     }
-    const maxMb = 4;
+    const maxMb = 16;
     if (file.size > maxMb * 1024 * 1024) {
-      setPhotoError(`Das Bild darf maximal ${maxMb} MB groß sein.`);
+      setPhotoError(`Das Bild darf maximal ${maxMb} MB groß sein (danach wird es verkleinert).`);
       return;
     }
     setPhotoError('');
