@@ -12,7 +12,7 @@ import {
   Camera,
   Loader2,
 } from 'lucide-react';
-import { uploadChildAvatar } from '../../lib/childPhotoStorage';
+import { fileToDataUrl } from '../../lib/localChildPhoto';
 
 const commonAllergens = [
   'Milch', 'Ei', 'Erdnuss', 'Baumnüsse', 'Weizen', 'Soja',
@@ -32,8 +32,6 @@ export default function AddChildForm({
   title = 'Kind hinzufügen',
   subtitle = 'Erzähle uns von deinem Kind',
   submitLabel = 'Kind hinzufügen',
-  /** Für Profilbild-Upload (Firebase Storage) */
-  username = null,
   /** 'edit' zeigt zusätzlich „Speichern“ in der Kopfzeile */
   mode = 'add',
 }) {
@@ -54,7 +52,7 @@ export default function AddChildForm({
   const [photoUrl, setPhotoUrl] = useState(initialChild?.photoUrl || '');
   const [localPhotoPreview, setLocalPhotoPreview] = useState(null);
   const [pendingPhotoFile, setPendingPhotoFile] = useState(null);
-  const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoSaving, setPhotoSaving] = useState(false);
   const [photoError, setPhotoError] = useState('');
   const fileInputRef = useRef(null);
 
@@ -142,14 +140,10 @@ export default function AddChildForm({
     let finalPhotoUrl = photoUrl || null;
 
     if (pendingPhotoFile) {
-      if (!username?.trim()) {
-        setPhotoError('Profilbild ist nur nach Anmeldung möglich.');
-        return null;
-      }
-      setPhotoUploading(true);
+      setPhotoSaving(true);
       setPhotoError('');
       try {
-        finalPhotoUrl = await uploadChildAvatar(username, id, pendingPhotoFile);
+        finalPhotoUrl = await fileToDataUrl(pendingPhotoFile);
         setPhotoUrl(finalPhotoUrl);
         setPendingPhotoFile(null);
         setLocalPhotoPreview((prev) => {
@@ -157,12 +151,12 @@ export default function AddChildForm({
           return null;
         });
       } catch (err) {
-        console.error('Avatar upload failed:', err);
-        setPhotoError('Bild konnte nicht hochgeladen werden. Bitte später erneut versuchen.');
-        setPhotoUploading(false);
+        console.error('Avatar local save failed:', err);
+        setPhotoError(err?.message || 'Bild konnte nicht gespeichert werden.');
+        setPhotoSaving(false);
         return null;
       }
-      setPhotoUploading(false);
+      setPhotoSaving(false);
     }
 
     return {
@@ -206,10 +200,10 @@ export default function AddChildForm({
           <button
             type="button"
             onClick={handleHeaderSave}
-            disabled={photoUploading}
+            disabled={photoSaving}
             className="shrink-0 px-4 py-2 rounded-xl bg-sage-500 hover:bg-sage-600 disabled:opacity-60 text-white text-sm font-semibold cursor-pointer transition-colors"
           >
-            {photoUploading ? (
+            {photoSaving ? (
               <span className="flex items-center gap-1.5">
                 <Loader2 className="w-4 h-4 animate-spin" />
                 Speichern
@@ -235,7 +229,7 @@ export default function AddChildForm({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            disabled={photoUploading}
+            disabled={photoSaving}
             className={`relative w-24 h-24 rounded-full ${form.avatarColor} flex items-center justify-center shadow-sm overflow-hidden ring-2 ring-white cursor-pointer disabled:opacity-60`}
           >
             {localPhotoPreview || photoUrl ? (
@@ -259,7 +253,7 @@ export default function AddChildForm({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              disabled={photoUploading}
+              disabled={photoSaving}
               className="text-sm font-medium text-sage-600 hover:text-sage-700 cursor-pointer disabled:opacity-50"
             >
               Foto wählen
@@ -268,7 +262,7 @@ export default function AddChildForm({
               <button
                 type="button"
                 onClick={clearPhoto}
-                disabled={photoUploading}
+                disabled={photoSaving}
                 className="text-sm text-gray-500 hover:text-rose-600 cursor-pointer disabled:opacity-50"
               >
                 Foto entfernen
@@ -276,11 +270,9 @@ export default function AddChildForm({
             )}
           </div>
           {photoError && <p className="text-rose-500 text-xs text-center px-2">{photoError}</p>}
-          {!username && (
-            <p className="text-xs text-gray-400 text-center max-w-xs">
-              Profilbilder werden in der Cloud gespeichert (nach Anmeldung).
-            </p>
-          )}
+          <p className="text-xs text-gray-400 text-center max-w-xs">
+            Profilbilder werden nur auf diesem Gerät gespeichert (Browser-Speicher).
+          </p>
         </div>
 
         {/* Avatar Color Picker */}
@@ -433,10 +425,10 @@ export default function AddChildForm({
         <div className="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-warm-50 via-warm-50 to-transparent safe-bottom z-50 max-w-lg mx-auto">
           <button
             type="submit"
-            disabled={photoUploading}
+            disabled={photoSaving}
             className="w-full bg-sage-500 hover:bg-sage-600 disabled:opacity-60 text-white font-semibold py-4 rounded-2xl transition-colors flex items-center justify-center gap-2 shadow-sm cursor-pointer"
           >
-            {photoUploading ? (
+            {photoSaving ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
                 Wird gespeichert…

@@ -30,7 +30,6 @@ export default function EditChildPage() {
       title="Kind bearbeiten"
       subtitle="Daten des Kindes aktualisieren"
       submitLabel="Änderungen speichern"
-      username={state.currentUser}
       mode="edit"
     />
   );

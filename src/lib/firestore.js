@@ -25,7 +25,11 @@ function symptomsCol(username) {
 
 // --- Children ---
 export async function saveChild(username, child) {
-  await setDoc(doc(childrenCol(username), child.id), child);
+  const toSave = { ...child };
+  if (typeof toSave.photoUrl === 'string' && toSave.photoUrl.startsWith('data:')) {
+    delete toSave.photoUrl;
+  }
+  await setDoc(doc(childrenCol(username), toSave.id), toSave);
 }
 
 export async function removeChild(username, childId) {
