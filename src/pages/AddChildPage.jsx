@@ -19,6 +19,7 @@ export default function AddChildPage() {
       title="Kind hinzufügen"
       subtitle="Füge ein weiteres Kind hinzu"
       submitLabel="Kind speichern"
+      username={state.currentUser}
     />
   );
 }

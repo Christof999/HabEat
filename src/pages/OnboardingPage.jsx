@@ -38,6 +38,7 @@ export default function OnboardingPage() {
             state.children.length > 0 ? setStep(STEPS.SUMMARY) : setStep(STEPS.WELCOME)
           }
           childIndex={state.children.length}
+          username={state.currentUser}
         />
       );
 
