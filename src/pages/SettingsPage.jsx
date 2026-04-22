@@ -1,4 +1,4 @@
-import { User, Baby, Bell, FileText, Trash2, ChevronRight, LogOut, Info, Shield } from 'lucide-react';
+import { User, Baby, Bell, FileText, Trash2, ChevronRight, LogOut, Info, Shield, TrendingUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext';
 
@@ -20,13 +20,22 @@ export default function SettingsPage() {
     {
       title: 'Kinder',
       items: [
-        ...state.children.map(child => ({
-          icon: Baby,
-          label: child.name,
-          sublabel: `${(child.knownAllergies || child.allergies || []).length} Allergien`,
-          action: () => navigate(`/settings/edit-child/${child.id}`),
-          avatarColor: child.avatarColor,
-        })),
+        ...state.children.flatMap(child => ([
+          {
+            icon: Baby,
+            label: child.name,
+            sublabel: `${(child.knownAllergies || child.allergies || []).length} Allergien`,
+            action: () => navigate(`/settings/edit-child/${child.id}`),
+            avatarColor: child.avatarColor,
+          },
+          {
+            icon: TrendingUp,
+            label: `Wachstum: ${child.name}`,
+            sublabel: 'Größe, Gewicht, Perzentile',
+            action: () => navigate(`/settings/child-growth/${child.id}`),
+            avatarColor: null,
+          },
+        ])),
         {
           icon: Baby,
           label: 'Kind hinzufügen',

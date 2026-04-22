@@ -25,7 +25,11 @@ function symptomsCol(username) {
 
 // --- Children ---
 export async function saveChild(username, child) {
-  await setDoc(doc(childrenCol(username), child.id), child);
+  const toSave = { ...child };
+  if (Array.isArray(toSave.growthMeasurements) && toSave.growthMeasurements.length > 80) {
+    toSave.growthMeasurements = toSave.growthMeasurements.slice(-80);
+  }
+  await setDoc(doc(childrenCol(username), toSave.id), toSave);
 }
 
 export async function removeChild(username, childId) {

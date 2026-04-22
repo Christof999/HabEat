@@ -5,6 +5,11 @@ import {
   saveUserSettings, subscribeToUserData,
 } from '../lib/firestore';
 import { isAdultNutritionUser } from '../lib/userProfile';
+import {
+  normalizeGrowthMeasurements,
+  migrateGrowthMeasurements,
+  mergeChildGrowthForSync,
+} from '../lib/childGrowth';
 
 const AppContext = createContext(null);
 
@@ -35,12 +40,20 @@ function normalizeChild(child) {
       ? child.allergies
       : [];
 
+  const sex = child.sex === 'female' || child.sex === 'male' ? child.sex : null;
+  let growthMeasurements = normalizeGrowthMeasurements(child.growthMeasurements);
+  if (growthMeasurements.length === 0) {
+    growthMeasurements = migrateGrowthMeasurements({ ...child, id: safeId, knownAllergies });
+  }
+
   return {
     ...child,
     id: safeId,
     name: safeName,
     knownAllergies,
     allergies: knownAllergies,
+    sex,
+    growthMeasurements,
   };
 }
 
@@ -140,7 +153,25 @@ function appReducer(state, action) {
     case 'SYNC_FIRESTORE':
       {
         if (Object.prototype.hasOwnProperty.call(action.payload || {}, 'children')) {
-          const children = normalizeChildrenList(action.payload.children);
+          const remoteList = action.payload.children;
+          const merged = Array.isArray(remoteList)
+            ? remoteList.map((remote) => {
+                const local = state.children.find((c) => c.id === remote.id);
+                let out = remote;
+                if (local) {
+                  const lp = local?.photoUrl;
+                  if (typeof lp === 'string' && lp.startsWith('data:image/')) {
+                    out = { ...out, photoUrl: lp };
+                  }
+                  out = {
+                    ...out,
+                    growthMeasurements: mergeChildGrowthForSync(local, out),
+                  };
+                }
+                return out;
+              })
+            : [];
+          const children = normalizeChildrenList(merged);
           const activeChildId = children.some(c => c.id === state.activeChildId)
             ? state.activeChildId
             : children[0]?.id || null;
