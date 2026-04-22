@@ -10,6 +10,7 @@ import {
   migrateGrowthMeasurements,
   mergeChildGrowthForSync,
 } from '../lib/childGrowth';
+import { saveUserStateBackup, loadUserStateBackup, userBackupKey } from '../lib/stateBackup';
 
 const AppContext = createContext(null);
 
@@ -62,15 +63,89 @@ function normalizeChildrenList(children) {
   return children.map(normalizeChild).filter(Boolean);
 }
 
+/**
+ * Beim Login: niemals lokale Kinder/Mahlzeiten verwerfen (vorheriger Bug: nur initialState).
+ * Nutzt gleichen Benutzer im State oder separates Backup pro Benutzer.
+ */
+function mergeStateForLogin(prevState, loginUsername) {
+  const u = String(loginUsername || '').trim();
+  const lower = u.toLowerCase();
+  const sameSessionUser = prevState.currentUser
+    && String(prevState.currentUser).toLowerCase() === lower
+    && prevState.loggedIn;
+
+  let preserved = null;
+  if (sameSessionUser && prevState.children?.length > 0) {
+    preserved = {
+      children: prevState.children,
+      meals: prevState.meals,
+      symptoms: prevState.symptoms,
+      onboardingComplete: prevState.onboardingComplete,
+      activeChildId: prevState.activeChildId,
+    };
+  } else {
+    const backup = loadUserStateBackup(u);
+    if (backup && Array.isArray(backup.children) && backup.children.length > 0) {
+      preserved = {
+        children: backup.children,
+        meals: Array.isArray(backup.meals) ? backup.meals : [],
+        symptoms: Array.isArray(backup.symptoms) ? backup.symptoms : [],
+        onboardingComplete: !!backup.onboardingComplete,
+        activeChildId: backup.activeChildId ?? null,
+      };
+    } else {
+      try {
+        const raw = localStorage.getItem('habeat-state');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          const storedUser = parsed?.currentUser && String(parsed.currentUser).toLowerCase();
+          if (storedUser === lower && Array.isArray(parsed.children) && parsed.children.length > 0) {
+            preserved = {
+              children: parsed.children,
+              meals: Array.isArray(parsed.meals) ? parsed.meals : [],
+              symptoms: Array.isArray(parsed.symptoms) ? parsed.symptoms : [],
+              onboardingComplete: !!parsed.onboardingComplete,
+              activeChildId: parsed.activeChildId ?? null,
+            };
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  if (!preserved) {
+    return {
+      ...initialState,
+      loggedIn: true,
+      currentUser: u,
+      adultNutrition: isAdultNutritionUser(u),
+    };
+  }
+
+  const children = normalizeChildrenList(preserved.children);
+  const activeChildId = children.some(c => c.id === preserved.activeChildId)
+    ? preserved.activeChildId
+    : children[0]?.id || null;
+
+  return {
+    ...initialState,
+    loggedIn: true,
+    currentUser: u,
+    adultNutrition: isAdultNutritionUser(u),
+    onboardingComplete: preserved.onboardingComplete,
+    activeChildId,
+    children,
+    meals: preserved.meals,
+    symptoms: preserved.symptoms,
+  };
+}
+
 function appReducer(state, action) {
   switch (action.type) {
     case 'SET_LOGGED_IN':
-      return {
-        ...initialState,
-        loggedIn: true,
-        currentUser: action.payload.username,
-        adultNutrition: isAdultNutritionUser(action.payload.username),
-      };
+      return mergeStateForLogin(state, action.payload.username);
 
     case 'LOGOUT':
       return { ...initialState };
@@ -197,11 +272,33 @@ function appReducer(state, action) {
           };
         }
 
-        return { ...state, ...action.payload, firestoreReady: true };
+        const p = { ...action.payload };
+        if (p.onboardingComplete === false && state.children.length > 0) {
+          delete p.onboardingComplete;
+        }
+        return { ...state, ...p, firestoreReady: true };
       }
 
     case 'RESET':
       return initialState;
+
+    case 'RESTORE_FROM_LOCAL_BACKUP':
+      {
+        const b = action.payload;
+        if (!b || !Array.isArray(b.children) || b.children.length === 0) return state;
+        const children = normalizeChildrenList(b.children);
+        const activeChildId = children.some(c => c.id === b.activeChildId)
+          ? b.activeChildId
+          : children[0]?.id || null;
+        return {
+          ...state,
+          onboardingComplete: b.onboardingComplete !== false,
+          activeChildId,
+          children,
+          meals: Array.isArray(b.meals) ? b.meals : state.meals,
+          symptoms: Array.isArray(b.symptoms) ? b.symptoms : state.symptoms,
+        };
+      }
 
     default:
       return state;
@@ -265,9 +362,26 @@ export function AppProvider({ children: reactChildren }) {
   });
 
   const firestoreListening = useRef(false);
+  const triedBackupRestore = useRef(false);
 
   // Wrapped dispatch that also syncs to Firestore
   const dispatch = (action) => {
+    if (action.type === 'LOGOUT' && state.currentUser) {
+      saveUserStateBackup(state.currentUser, {
+        onboardingComplete: state.onboardingComplete,
+        activeChildId: state.activeChildId,
+        children: state.children,
+        meals: state.meals,
+        symptoms: state.symptoms,
+      });
+    }
+    if (action.type === 'RESET' && state.currentUser) {
+      try {
+        localStorage.removeItem(userBackupKey(state.currentUser));
+      } catch {
+        /* ignore */
+      }
+    }
     rawDispatch(action);
 
     if (action.type === 'UPDATE_MEAL') {
@@ -284,9 +398,38 @@ export function AppProvider({ children: reactChildren }) {
     syncToFirestore(state.currentUser, action);
   };
 
-  // Save to localStorage
+  // Einmalig: wenn State leer aber Backup für diesen Benutzer existiert (z. B. habeat-state überschrieben)
+  useEffect(() => {
+    if (!state.loggedIn || !state.currentUser || triedBackupRestore.current) return;
+    if (state.children.length > 0) {
+      triedBackupRestore.current = true;
+      return;
+    }
+    const b = loadUserStateBackup(state.currentUser);
+    if (b?.children?.length) {
+      rawDispatch({ type: 'RESTORE_FROM_LOCAL_BACKUP', payload: b });
+    }
+    triedBackupRestore.current = true;
+  }, [state.loggedIn, state.currentUser, state.children.length]);
+
+  // Save to localStorage + pro-Benutzer-Backup (gegen versehentliches Überschreiben)
   useEffect(() => {
     localStorage.setItem('habeat-state', JSON.stringify(state));
+    if (state.loggedIn && state.currentUser) {
+      const hasData = state.children.length > 0
+        || state.meals.length > 0
+        || state.symptoms.length > 0
+        || state.onboardingComplete;
+      if (hasData) {
+        saveUserStateBackup(state.currentUser, {
+          onboardingComplete: state.onboardingComplete,
+          activeChildId: state.activeChildId,
+          children: state.children,
+          meals: state.meals,
+          symptoms: state.symptoms,
+        });
+      }
+    }
   }, [state]);
 
   // Subscribe to Firestore when logged in
@@ -300,8 +443,10 @@ export function AppProvider({ children: reactChildren }) {
           rawDispatch({
             type: 'SYNC_FIRESTORE',
             payload: {
-              onboardingComplete: data.onboardingComplete ?? false,
-              activeChildId: data.activeChildId ?? null,
+              ...(data.onboardingComplete !== undefined && {
+                onboardingComplete: data.onboardingComplete,
+              }),
+              ...(data.activeChildId !== undefined && { activeChildId: data.activeChildId }),
             },
           });
           break;
