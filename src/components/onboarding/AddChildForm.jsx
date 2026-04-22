@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { ArrowRight, ArrowLeft, Plus, X, User, Calendar, Ruler, Weight, AlertTriangle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowRight, ArrowLeft, Plus, X, User, Calendar, Ruler, Weight, AlertTriangle, TrendingUp } from 'lucide-react';
+import { mergeGrowthMeasurementOnSave } from '../../lib/childGrowth';
 
 const commonAllergens = [
   'Milch', 'Ei', 'Erdnuss', 'Baumnüsse', 'Weizen', 'Soja',
@@ -20,6 +22,7 @@ export default function AddChildForm({
   subtitle = 'Erzähle uns von deinem Kind',
   submitLabel = 'Kind hinzufügen',
 }) {
+  const navigate = useNavigate();
   const initialKnownAllergies = Array.isArray(initialChild?.knownAllergies)
     ? initialChild.knownAllergies
     : Array.isArray(initialChild?.allergies)
@@ -33,6 +36,7 @@ export default function AddChildForm({
     weight: initialChild?.weight ?? '',
     knownAllergies: initialKnownAllergies,
     avatarColor: initialChild?.avatarColor || avatarColors[childIndex % avatarColors.length],
+    sex: initialChild?.sex === 'male' || initialChild?.sex === 'female' ? initialChild.sex : '',
   });
   const [customAllergen, setCustomAllergen] = useState('');
   const [errors, setErrors] = useState({});
@@ -78,11 +82,18 @@ export default function AddChildForm({
       setErrors(newErrors);
       return;
     }
+    const height = form.height ? parseFloat(form.height) : null;
+    const weight = form.weight ? parseFloat(form.weight) : null;
+    const sex = form.sex === 'male' || form.sex === 'female' ? form.sex : null;
+    const growthMeasurements = mergeGrowthMeasurementOnSave(initialChild, height, weight);
+
     onAdd({
       ...form,
+      sex,
       id: initialChild?.id || crypto.randomUUID(),
-      height: form.height ? parseFloat(form.height) : null,
-      weight: form.weight ? parseFloat(form.weight) : null,
+      height,
+      weight,
+      growthMeasurements,
       createdAt: initialChild?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
@@ -167,6 +178,21 @@ export default function AddChildForm({
           {errors.birthDate && <p className="text-rose-500 text-xs mt-1">{errors.birthDate}</p>}
         </div>
 
+        <div>
+          <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+            Geschlecht (für Perzentil-Schätzung)
+          </label>
+          <select
+            value={form.sex}
+            onChange={(e) => updateField('sex', e.target.value)}
+            className="w-full px-4 py-3 rounded-xl bg-white border border-sage-200 focus:outline-none focus:ring-2 focus:ring-sage-300 transition text-gray-800 text-sm"
+          >
+            <option value="">Keine Angabe (Mittelwert Junge/Mädchen)</option>
+            <option value="male">Junge</option>
+            <option value="female">Mädchen</option>
+          </select>
+        </div>
+
         {/* Height & Weight Row */}
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -197,6 +223,17 @@ export default function AddChildForm({
             />
           </div>
         </div>
+
+        {initialChild?.id && (
+          <button
+            type="button"
+            onClick={() => navigate(`/settings/child-growth/${initialChild.id}`)}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-sage-200 bg-white text-sage-700 text-sm font-medium cursor-pointer hover:bg-sage-50 transition"
+          >
+            <TrendingUp className="w-4 h-4" />
+            Wachstum & Perzentile
+          </button>
+        )}
 
         {/* Allergens */}
         <div>

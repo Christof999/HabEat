@@ -25,7 +25,12 @@ function symptomsCol(username) {
 
 // --- Children ---
 export async function saveChild(username, child) {
-  await setDoc(doc(childrenCol(username), child.id), child);
+  const toSave = { ...child };
+  if (Array.isArray(toSave.growthMeasurements) && toSave.growthMeasurements.length > 80) {
+    toSave.growthMeasurements = toSave.growthMeasurements.slice(-80);
+  }
+  const ref = doc(childrenCol(username), toSave.id);
+  await setDoc(ref, { ...toSave, id: toSave.id });
 }
 
 export async function removeChild(username, childId) {
@@ -36,13 +41,14 @@ export async function removeChild(username, childId) {
 export async function saveMeal(username, meal) {
   await setDoc(doc(mealsCol(username), meal.id), {
     ...meal,
+    id: meal.id,
     imageUrl: null, // Don't store base64 images in Firestore (too large)
   });
 }
 
 // --- Symptoms ---
 export async function saveSymptom(username, symptom) {
-  await setDoc(doc(symptomsCol(username), symptom.id), symptom);
+  await setDoc(doc(symptomsCol(username), symptom.id), { ...symptom, id: symptom.id });
 }
 
 export async function removeSymptom(username, symptomId) {
@@ -67,10 +73,14 @@ export function subscribeToUserData(username, onData) {
     })
   );
 
-  // Listen to children
+  // Listen to children (Dokument-ID = Kind-ID, falls Feld `id` im Body fehlt)
   unsubscribers.push(
     onSnapshot(childrenCol(username), (snap) => {
-      const children = snap.docs.map(d => d.data());
+      const children = snap.docs.map((d) => {
+        const data = d.data() || {};
+        const idFromBody = typeof data.id === 'string' && data.id.trim() ? data.id.trim() : '';
+        return { ...data, id: idFromBody || d.id };
+      });
       onData('children', children);
     })
   );
@@ -78,7 +88,11 @@ export function subscribeToUserData(username, onData) {
   // Listen to meals (ordered by timestamp desc)
   unsubscribers.push(
     onSnapshot(query(mealsCol(username), orderBy('timestamp', 'desc')), (snap) => {
-      const meals = snap.docs.map(d => d.data());
+      const meals = snap.docs.map((d) => {
+        const data = d.data() || {};
+        const idFromBody = typeof data.id === 'string' && data.id.trim() ? data.id.trim() : '';
+        return { ...data, id: idFromBody || d.id };
+      });
       onData('meals', meals);
     })
   );
@@ -86,7 +100,11 @@ export function subscribeToUserData(username, onData) {
   // Listen to symptoms
   unsubscribers.push(
     onSnapshot(query(symptomsCol(username), orderBy('timestamp', 'desc')), (snap) => {
-      const symptoms = snap.docs.map(d => d.data());
+      const symptoms = snap.docs.map((d) => {
+        const data = d.data() || {};
+        const idFromBody = typeof data.id === 'string' && data.id.trim() ? data.id.trim() : '';
+        return { ...data, id: idFromBody || d.id };
+      });
       onData('symptoms', symptoms);
     })
   );

@@ -5,6 +5,13 @@ import {
   saveUserSettings, subscribeToUserData,
 } from '../lib/firestore';
 import { isAdultNutritionUser } from '../lib/userProfile';
+import {
+  normalizeGrowthMeasurements,
+  migrateGrowthMeasurements,
+  mergeChildGrowthForSync,
+} from '../lib/childGrowth';
+import { reconcileChildrenAndMeals, mergeChildProfileFromLocal } from '../lib/childReconcile';
+import { saveUserStateBackup, loadUserStateBackup, userBackupKey } from '../lib/stateBackup';
 
 const AppContext = createContext(null);
 
@@ -25,9 +32,10 @@ function normalizeChild(child) {
   if (!child || typeof child !== 'object') return null;
 
   const safeId = typeof child.id === 'string' ? child.id.trim() : '';
-  const safeName = typeof child.name === 'string' ? child.name.trim() : '';
+  const rawName = typeof child.name === 'string' ? child.name.trim() : '';
+  const safeName = rawName || 'Kind';
 
-  if (!safeId || !safeName) return null;
+  if (!safeId) return null;
 
   const knownAllergies = Array.isArray(child?.knownAllergies)
     ? child.knownAllergies
@@ -35,12 +43,20 @@ function normalizeChild(child) {
       ? child.allergies
       : [];
 
+  const sex = child.sex === 'female' || child.sex === 'male' ? child.sex : null;
+  let growthMeasurements = normalizeGrowthMeasurements(child.growthMeasurements);
+  if (growthMeasurements.length === 0) {
+    growthMeasurements = migrateGrowthMeasurements({ ...child, id: safeId, knownAllergies });
+  }
+
   return {
     ...child,
     id: safeId,
     name: safeName,
     knownAllergies,
     allergies: knownAllergies,
+    sex,
+    growthMeasurements,
   };
 }
 
@@ -49,15 +65,89 @@ function normalizeChildrenList(children) {
   return children.map(normalizeChild).filter(Boolean);
 }
 
+/**
+ * Beim Login: niemals lokale Kinder/Mahlzeiten verwerfen (vorheriger Bug: nur initialState).
+ * Nutzt gleichen Benutzer im State oder separates Backup pro Benutzer.
+ */
+function mergeStateForLogin(prevState, loginUsername) {
+  const u = String(loginUsername || '').trim();
+  const lower = u.toLowerCase();
+  const sameSessionUser = prevState.currentUser
+    && String(prevState.currentUser).toLowerCase() === lower
+    && prevState.loggedIn;
+
+  let preserved = null;
+  if (sameSessionUser && prevState.children?.length > 0) {
+    preserved = {
+      children: prevState.children,
+      meals: prevState.meals,
+      symptoms: prevState.symptoms,
+      onboardingComplete: prevState.onboardingComplete,
+      activeChildId: prevState.activeChildId,
+    };
+  } else {
+    const backup = loadUserStateBackup(u);
+    if (backup && Array.isArray(backup.children) && backup.children.length > 0) {
+      preserved = {
+        children: backup.children,
+        meals: Array.isArray(backup.meals) ? backup.meals : [],
+        symptoms: Array.isArray(backup.symptoms) ? backup.symptoms : [],
+        onboardingComplete: !!backup.onboardingComplete,
+        activeChildId: backup.activeChildId ?? null,
+      };
+    } else {
+      try {
+        const raw = localStorage.getItem('habeat-state');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          const storedUser = parsed?.currentUser && String(parsed.currentUser).toLowerCase();
+          if (storedUser === lower && Array.isArray(parsed.children) && parsed.children.length > 0) {
+            preserved = {
+              children: parsed.children,
+              meals: Array.isArray(parsed.meals) ? parsed.meals : [],
+              symptoms: Array.isArray(parsed.symptoms) ? parsed.symptoms : [],
+              onboardingComplete: !!parsed.onboardingComplete,
+              activeChildId: parsed.activeChildId ?? null,
+            };
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  if (!preserved) {
+    return {
+      ...initialState,
+      loggedIn: true,
+      currentUser: u,
+      adultNutrition: isAdultNutritionUser(u),
+    };
+  }
+
+  const children = normalizeChildrenList(preserved.children);
+  const activeChildId = children.some(c => c.id === preserved.activeChildId)
+    ? preserved.activeChildId
+    : children[0]?.id || null;
+
+  return {
+    ...initialState,
+    loggedIn: true,
+    currentUser: u,
+    adultNutrition: isAdultNutritionUser(u),
+    onboardingComplete: preserved.onboardingComplete,
+    activeChildId,
+    children,
+    meals: preserved.meals,
+    symptoms: preserved.symptoms,
+  };
+}
+
 function appReducer(state, action) {
   switch (action.type) {
     case 'SET_LOGGED_IN':
-      return {
-        ...initialState,
-        loggedIn: true,
-        currentUser: action.payload.username,
-        adultNutrition: isAdultNutritionUser(action.payload.username),
-      };
+      return mergeStateForLogin(state, action.payload.username);
 
     case 'LOGOUT':
       return { ...initialState };
@@ -137,28 +227,60 @@ function appReducer(state, action) {
         };
       }
 
+    case 'APP_HYDRATE':
+      {
+        const ch = normalizeChildrenList(action.payload.children);
+        const nextActive = action.payload.activeChildId;
+        const activeChildId = ch.some(c => c.id === nextActive)
+          ? nextActive
+          : ch[0]?.id || null;
+        return {
+          ...state,
+          children: ch,
+          meals: action.payload.meals ?? state.meals,
+          symptoms: action.payload.symptoms ?? state.symptoms,
+          activeChildId,
+          onboardingComplete:
+            action.payload.onboardingComplete !== undefined
+              ? action.payload.onboardingComplete
+              : state.onboardingComplete,
+          firestoreReady: true,
+        };
+      }
+
     case 'SYNC_FIRESTORE':
       {
-        if (Object.prototype.hasOwnProperty.call(action.payload || {}, 'children')) {
-          const children = normalizeChildrenList(action.payload.children);
-          const activeChildId = children.some(c => c.id === state.activeChildId)
-            ? state.activeChildId
-            : children[0]?.id || null;
-
-          return {
-            ...state,
-            ...action.payload,
-            children,
-            activeChildId,
-            firestoreReady: true,
-          };
+        const p = { ...action.payload };
+        if (p.onboardingComplete === false && state.children.length > 0) {
+          delete p.onboardingComplete;
         }
-
-        return { ...state, ...action.payload, firestoreReady: true };
+        return { ...state, ...p, firestoreReady: true };
       }
 
     case 'RESET':
       return initialState;
+
+    case 'RESTORE_FROM_LOCAL_BACKUP':
+      {
+        const b = action.payload;
+        if (!b || !Array.isArray(b.children) || b.children.length === 0) return state;
+        let children = normalizeChildrenList(b.children);
+        let meals = Array.isArray(b.meals) ? b.meals : state.meals;
+        const rec = reconcileChildrenAndMeals(children, meals);
+        children = normalizeChildrenList(rec.children);
+        meals = rec.meals;
+        const activeChildId = children.some(c => c.id === b.activeChildId)
+          ? b.activeChildId
+          : children[0]?.id || null;
+        return {
+          ...state,
+          onboardingComplete: b.onboardingComplete !== false,
+          activeChildId,
+          children,
+          meals,
+          symptoms: Array.isArray(b.symptoms) ? b.symptoms : state.symptoms,
+        };
+      }
 
     default:
       return state;
@@ -200,19 +322,109 @@ function syncToFirestore(username, action) {
   }
 }
 
+/**
+ * Firestore children + lokaler Merge + Duplikat-Bereinigung (ohne Reducer-Schleifen).
+ */
+function buildHydratedStateFromChildrenSnapshot(username, remoteList, currentState) {
+  const s = currentState;
+  if (
+    Array.isArray(remoteList)
+    && remoteList.length === 0
+    && s.children.length > 0
+  ) {
+    return null;
+  }
+
+  const merged = Array.isArray(remoteList)
+    ? remoteList.map((remote) => {
+        const local = s.children.find((c) => c.id === remote.id);
+        let out = remote;
+        if (local) {
+          out = mergeChildProfileFromLocal(local, out);
+          const lp = local?.photoUrl;
+          if (typeof lp === 'string' && lp.startsWith('data:image/')) {
+            out = { ...out, photoUrl: lp };
+          }
+          out = {
+            ...out,
+            growthMeasurements: mergeChildGrowthForSync(local, out),
+          };
+        }
+        return out;
+      })
+    : [];
+
+  let children = normalizeChildrenList(merged);
+  if (children.length === 0 && s.children.length > 0) {
+    children = s.children;
+  }
+
+  const rec = reconcileChildrenAndMeals(children, s.meals);
+  children = normalizeChildrenList(rec.children);
+  const meals = rec.meals;
+
+  let activeChildId = s.activeChildId;
+  if (!children.some((c) => c.id === activeChildId)) {
+    activeChildId = rec.primaryChildId || children[0]?.id || null;
+  }
+
+  if (rec.changed && username && Array.isArray(rec.removedIds)) {
+    for (const rid of rec.removedIds) {
+      try {
+        removeChildFromDb(username, rid);
+      } catch (e) {
+        console.warn('HabEat: Kind konnte nicht aus Firestore entfernt werden.', rid, e);
+      }
+    }
+  }
+
+  const primary = children.find((c) => c.id === rec.primaryChildId) || children[0];
+  if (rec.changed && username && primary) {
+    try {
+      saveChild(username, primary);
+    } catch (e) {
+      console.warn('HabEat: zusammengeführtes Kind konnte nicht gespeichert werden.', e);
+    }
+    for (const m of meals) {
+      if (typeof m?.id === 'string' && m.id) {
+        try {
+          saveMeal(username, m);
+        } catch (e) {
+          console.warn('HabEat: Mahlzeit konnte nicht gespeichert werden.', m.id, e);
+        }
+      }
+    }
+  }
+
+  const onboardingComplete = children.length > 0 ? true : s.onboardingComplete;
+
+  return {
+    children,
+    meals,
+    symptoms: s.symptoms,
+    activeChildId,
+    onboardingComplete,
+  };
+}
+
 export function AppProvider({ children: reactChildren }) {
   const [state, rawDispatch] = useReducer(appReducer, initialState, (init) => {
     const saved = localStorage.getItem('habeat-state');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        const children = normalizeChildrenList(parsed.children);
+        let children = normalizeChildrenList(parsed.children);
+        let meals = Array.isArray(parsed.meals) ? parsed.meals : [];
+        const rec = reconcileChildrenAndMeals(children, meals);
+        children = normalizeChildrenList(rec.children);
+        meals = rec.meals;
         const activeChildId = children.some(c => c.id === parsed.activeChildId)
           ? parsed.activeChildId
-          : children[0]?.id || null;
+          : (rec.primaryChildId || children[0]?.id || null);
 
-        const merged = { ...init, ...parsed, children, activeChildId };
+        const merged = { ...init, ...parsed, children, meals, activeChildId };
         merged.adultNutrition = merged.loggedIn && isAdultNutritionUser(merged.currentUser);
+        if (children.length > 0) merged.onboardingComplete = true;
         return merged;
       } catch {
         return init;
@@ -222,9 +434,31 @@ export function AppProvider({ children: reactChildren }) {
   });
 
   const firestoreListening = useRef(false);
+  const triedBackupRestore = useRef(false);
+  const stateRef = useRef(state);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   // Wrapped dispatch that also syncs to Firestore
   const dispatch = (action) => {
+    if (action.type === 'LOGOUT' && state.currentUser) {
+      saveUserStateBackup(state.currentUser, {
+        onboardingComplete: state.onboardingComplete,
+        activeChildId: state.activeChildId,
+        children: state.children,
+        meals: state.meals,
+        symptoms: state.symptoms,
+      });
+    }
+    if (action.type === 'RESET' && state.currentUser) {
+      try {
+        localStorage.removeItem(userBackupKey(state.currentUser));
+      } catch {
+        /* ignore */
+      }
+    }
     rawDispatch(action);
 
     if (action.type === 'UPDATE_MEAL') {
@@ -241,9 +475,38 @@ export function AppProvider({ children: reactChildren }) {
     syncToFirestore(state.currentUser, action);
   };
 
-  // Save to localStorage
+  // Einmalig: wenn State leer aber Backup für diesen Benutzer existiert (z. B. habeat-state überschrieben)
+  useEffect(() => {
+    if (!state.loggedIn || !state.currentUser || triedBackupRestore.current) return;
+    if (state.children.length > 0) {
+      triedBackupRestore.current = true;
+      return;
+    }
+    const b = loadUserStateBackup(state.currentUser);
+    if (b?.children?.length) {
+      rawDispatch({ type: 'RESTORE_FROM_LOCAL_BACKUP', payload: b });
+    }
+    triedBackupRestore.current = true;
+  }, [state.loggedIn, state.currentUser, state.children.length]);
+
+  // Save to localStorage + pro-Benutzer-Backup (gegen versehentliches Überschreiben)
   useEffect(() => {
     localStorage.setItem('habeat-state', JSON.stringify(state));
+    if (state.loggedIn && state.currentUser) {
+      const hasData = state.children.length > 0
+        || state.meals.length > 0
+        || state.symptoms.length > 0
+        || state.onboardingComplete;
+      if (hasData) {
+        saveUserStateBackup(state.currentUser, {
+          onboardingComplete: state.onboardingComplete,
+          activeChildId: state.activeChildId,
+          children: state.children,
+          meals: state.meals,
+          symptoms: state.symptoms,
+        });
+      }
+    }
   }, [state]);
 
   // Subscribe to Firestore when logged in
@@ -252,22 +515,32 @@ export function AppProvider({ children: reactChildren }) {
     firestoreListening.current = true;
 
     const unsub = subscribeToUserData(state.currentUser, (type, data) => {
+      const snapUser = stateRef.current.currentUser;
       switch (type) {
         case 'settings':
           rawDispatch({
             type: 'SYNC_FIRESTORE',
             payload: {
-              onboardingComplete: data.onboardingComplete ?? false,
-              activeChildId: data.activeChildId ?? null,
+              ...(data.onboardingComplete !== undefined && {
+                onboardingComplete: data.onboardingComplete,
+              }),
+              ...(data.activeChildId !== undefined && { activeChildId: data.activeChildId }),
             },
           });
           break;
-        case 'children':
-          rawDispatch({
-            type: 'SYNC_FIRESTORE',
-            payload: { children: normalizeChildrenList(data) },
-          });
+        case 'children': {
+          const hydrated = buildHydratedStateFromChildrenSnapshot(
+            snapUser,
+            data,
+            stateRef.current,
+          );
+          if (hydrated) {
+            rawDispatch({ type: 'APP_HYDRATE', payload: hydrated });
+          } else {
+            rawDispatch({ type: 'SYNC_FIRESTORE', payload: { firestoreReady: true } });
+          }
           break;
+        }
         case 'meals':
           rawDispatch({ type: 'SYNC_FIRESTORE', payload: { meals: data } });
           break;

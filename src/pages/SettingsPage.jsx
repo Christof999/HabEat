@@ -1,4 +1,4 @@
-import { User, Baby, Bell, FileText, Trash2, ChevronRight, LogOut, Info, Shield } from 'lucide-react';
+import { User, Baby, Bell, FileText, Trash2, ChevronRight, LogOut, Info, Shield, TrendingUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext';
 
@@ -20,33 +20,62 @@ export default function SettingsPage() {
     {
       title: 'Kinder',
       items: [
-        ...state.children.map(child => ({
-          icon: Baby,
-          label: child.name,
-          sublabel: `${(child.knownAllergies || child.allergies || []).length} Allergien`,
-          action: () => navigate(`/settings/edit-child/${child.id}`),
-          avatarColor: child.avatarColor,
-        })),
+        ...state.children.flatMap(child => ([
+          {
+            key: `${child.id}-edit`,
+            icon: Baby,
+            label: child.name,
+            sublabel: `${(child.knownAllergies || child.allergies || []).length} Allergien`,
+            action: () => navigate(`/settings/edit-child/${child.id}`),
+            avatarColor: child.avatarColor,
+            danger: false,
+          },
+          {
+            key: `${child.id}-growth`,
+            icon: TrendingUp,
+            label: `Wachstum: ${child.name}`,
+            sublabel: 'Größe, Gewicht, Perzentile',
+            action: () => navigate(`/settings/child-growth/${child.id}`),
+            avatarColor: null,
+            danger: false,
+          },
+          {
+            key: `${child.id}-delete`,
+            icon: Trash2,
+            label: `Profil löschen: ${child.name}`,
+            sublabel: 'Aus App und Cloud entfernen',
+            action: () => {
+              if (confirm(`Profil „${child.name}“ wirklich löschen?`)) {
+                dispatch({ type: 'REMOVE_CHILD', payload: child.id });
+              }
+            },
+            avatarColor: null,
+            danger: true,
+          },
+        ])),
         {
+          key: 'add-child',
           icon: Baby,
           label: 'Kind hinzufügen',
           sublabel: 'Neues Profil anlegen',
           action: () => navigate('/settings/add-child'),
+          avatarColor: null,
+          danger: false,
         },
       ],
     },
     {
       title: 'App',
       items: [
-        { icon: Bell, label: 'Benachrichtigungen', sublabel: 'Erinnerungen konfigurieren', action: () => {} },
-        { icon: FileText, label: 'PDF-Export', sublabel: 'Bericht für den Kinderarzt', action: () => {} },
-        { icon: Shield, label: 'Datenschutz', sublabel: 'Deine Daten gehören dir', action: () => {} },
+        { key: 'notif', icon: Bell, label: 'Benachrichtigungen', sublabel: 'Erinnerungen konfigurieren', action: () => {}, avatarColor: null, danger: false },
+        { key: 'pdf', icon: FileText, label: 'PDF-Export', sublabel: 'Bericht für den Kinderarzt', action: () => {}, avatarColor: null, danger: false },
+        { key: 'privacy', icon: Shield, label: 'Datenschutz', sublabel: 'Deine Daten gehören dir', action: () => {}, avatarColor: null, danger: false },
       ],
     },
     {
       title: 'Über',
       items: [
-        { icon: Info, label: 'Über HabEat', sublabel: 'Version 1.0.0', action: () => {} },
+        { key: 'about', icon: Info, label: 'Über HabEat', sublabel: 'Version 1.0.0', action: () => {}, avatarColor: null, danger: false },
       ],
     },
   ];
@@ -79,24 +108,27 @@ export default function SettingsPage() {
             <div className="bg-white rounded-2xl shadow-sm overflow-hidden divide-y divide-gray-50">
               {section.items.map((item, i) => (
                 <button
-                  key={i}
+                  key={item.key ?? i}
+                  type="button"
                   onClick={item.action}
-                  className="w-full px-4 py-3.5 flex items-center gap-3 cursor-pointer hover:bg-gray-50 transition text-left"
+                  className={`w-full px-4 py-3.5 flex items-center gap-3 cursor-pointer transition text-left ${
+                    item.danger ? 'hover:bg-rose-50' : 'hover:bg-gray-50'
+                  }`}
                 >
                   {item.avatarColor ? (
                     <div className={`w-9 h-9 rounded-full ${item.avatarColor} flex items-center justify-center`}>
                       <span className="text-sm font-bold text-gray-700">{(item.label?.trim()?.[0] || '?').toUpperCase()}</span>
                     </div>
                   ) : (
-                    <div className="w-9 h-9 rounded-xl bg-sage-50 flex items-center justify-center">
-                      <item.icon className="w-4 h-4 text-sage-600" />
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${item.danger ? 'bg-rose-50' : 'bg-sage-50'}`}>
+                      <item.icon className={`w-4 h-4 ${item.danger ? 'text-rose-500' : 'text-sage-600'}`} />
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-800">{item.label}</p>
+                    <p className={`text-sm font-medium ${item.danger ? 'text-rose-700' : 'text-gray-800'}`}>{item.label}</p>
                     {item.sublabel && <p className="text-xs text-gray-400">{item.sublabel}</p>}
                   </div>
-                  <ChevronRight className="w-4 h-4 text-gray-300" />
+                  {!item.danger && <ChevronRight className="w-4 h-4 text-gray-300" />}
                 </button>
               ))}
             </div>

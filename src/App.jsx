@@ -11,6 +11,7 @@ import EmergencyPage from './pages/EmergencyPage';
 import SettingsPage from './pages/SettingsPage';
 import AddChildPage from './pages/AddChildPage';
 import EditChildPage from './pages/EditChildPage';
+import ChildGrowthPage from './pages/ChildGrowthPage';
 
 function App() {
   const { state } = useApp();
@@ -33,6 +34,7 @@ function App() {
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/settings/add-child" element={<AddChildPage />} />
         <Route path="/settings/edit-child/:childId" element={<EditChildPage />} />
+        <Route path="/settings/child-growth/:childId" element={<ChildGrowthPage />} />
       </Route>
       <Route path="/track" element={<TrackingPage />} />
     </Routes>
