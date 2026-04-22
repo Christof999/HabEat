@@ -154,6 +154,15 @@ function appReducer(state, action) {
       {
         if (Object.prototype.hasOwnProperty.call(action.payload || {}, 'children')) {
           const remoteList = action.payload.children;
+          /** Leere Snapshots (Regeln, Netzwerk, Timing) dürfen lokale Kinder nicht löschen. */
+          if (
+            Array.isArray(remoteList)
+            && remoteList.length === 0
+            && state.children.length > 0
+          ) {
+            return { ...state, firestoreReady: true };
+          }
+
           const merged = Array.isArray(remoteList)
             ? remoteList.map((remote) => {
                 const local = state.children.find((c) => c.id === remote.id);
@@ -171,7 +180,10 @@ function appReducer(state, action) {
                 return out;
               })
             : [];
-          const children = normalizeChildrenList(merged);
+          let children = normalizeChildrenList(merged);
+          if (children.length === 0 && state.children.length > 0) {
+            children = state.children;
+          }
           const activeChildId = children.some(c => c.id === state.activeChildId)
             ? state.activeChildId
             : children[0]?.id || null;

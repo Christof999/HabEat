@@ -2,6 +2,25 @@
  * Messreihe Größe/Gewicht am Kind-Profil.
  */
 
+function measurementDateToYmd(value) {
+  if (typeof value === 'string') return value.slice(0, 10);
+  if (value && typeof value.toDate === 'function') {
+    try {
+      return value.toDate().toISOString().slice(0, 10);
+    } catch {
+      return '';
+    }
+  }
+  if (value && typeof value === 'object' && typeof value.seconds === 'number') {
+    try {
+      return new Date(value.seconds * 1000).toISOString().slice(0, 10);
+    } catch {
+      return '';
+    }
+  }
+  return '';
+}
+
 function sortByDate(measurements) {
   return [...measurements].sort((a, b) => String(a.date).localeCompare(String(b.date)));
 }
@@ -12,7 +31,7 @@ export function normalizeGrowthMeasurements(raw) {
   for (const m of raw) {
     if (!m || typeof m !== 'object') continue;
     const id = typeof m.id === 'string' && m.id.trim() ? m.id.trim() : crypto.randomUUID();
-    const date = typeof m.date === 'string' ? m.date.slice(0, 10) : '';
+    const date = measurementDateToYmd(m.date);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
     const height = m.height != null && m.height !== '' ? Number(m.height) : null;
     const weight = m.weight != null && m.weight !== '' ? Number(m.weight) : null;
