@@ -10,6 +10,7 @@ import {
   migrateGrowthMeasurements,
   mergeChildGrowthForSync,
 } from '../lib/childGrowth';
+import { reconcileChildrenAndMeals, mergeChildProfileFromLocal } from '../lib/childReconcile';
 import { saveUserStateBackup, loadUserStateBackup, userBackupKey } from '../lib/stateBackup';
 
 const AppContext = createContext(null);
@@ -226,53 +227,29 @@ function appReducer(state, action) {
         };
       }
 
+    case 'APP_HYDRATE':
+      {
+        const ch = normalizeChildrenList(action.payload.children);
+        const nextActive = action.payload.activeChildId;
+        const activeChildId = ch.some(c => c.id === nextActive)
+          ? nextActive
+          : ch[0]?.id || null;
+        return {
+          ...state,
+          children: ch,
+          meals: action.payload.meals ?? state.meals,
+          symptoms: action.payload.symptoms ?? state.symptoms,
+          activeChildId,
+          onboardingComplete:
+            action.payload.onboardingComplete !== undefined
+              ? action.payload.onboardingComplete
+              : state.onboardingComplete,
+          firestoreReady: true,
+        };
+      }
+
     case 'SYNC_FIRESTORE':
       {
-        if (Object.prototype.hasOwnProperty.call(action.payload || {}, 'children')) {
-          const remoteList = action.payload.children;
-          /** Leere Snapshots (Regeln, Netzwerk, Timing) dürfen lokale Kinder nicht löschen. */
-          if (
-            Array.isArray(remoteList)
-            && remoteList.length === 0
-            && state.children.length > 0
-          ) {
-            return { ...state, firestoreReady: true };
-          }
-
-          const merged = Array.isArray(remoteList)
-            ? remoteList.map((remote) => {
-                const local = state.children.find((c) => c.id === remote.id);
-                let out = remote;
-                if (local) {
-                  const lp = local?.photoUrl;
-                  if (typeof lp === 'string' && lp.startsWith('data:image/')) {
-                    out = { ...out, photoUrl: lp };
-                  }
-                  out = {
-                    ...out,
-                    growthMeasurements: mergeChildGrowthForSync(local, out),
-                  };
-                }
-                return out;
-              })
-            : [];
-          let children = normalizeChildrenList(merged);
-          if (children.length === 0 && state.children.length > 0) {
-            children = state.children;
-          }
-          const activeChildId = children.some(c => c.id === state.activeChildId)
-            ? state.activeChildId
-            : children[0]?.id || null;
-
-          return {
-            ...state,
-            ...action.payload,
-            children,
-            activeChildId,
-            firestoreReady: true,
-          };
-        }
-
         const p = { ...action.payload };
         if (p.onboardingComplete === false && state.children.length > 0) {
           delete p.onboardingComplete;
@@ -287,7 +264,11 @@ function appReducer(state, action) {
       {
         const b = action.payload;
         if (!b || !Array.isArray(b.children) || b.children.length === 0) return state;
-        const children = normalizeChildrenList(b.children);
+        let children = normalizeChildrenList(b.children);
+        let meals = Array.isArray(b.meals) ? b.meals : state.meals;
+        const rec = reconcileChildrenAndMeals(children, meals);
+        children = normalizeChildrenList(rec.children);
+        meals = rec.meals;
         const activeChildId = children.some(c => c.id === b.activeChildId)
           ? b.activeChildId
           : children[0]?.id || null;
@@ -296,7 +277,7 @@ function appReducer(state, action) {
           onboardingComplete: b.onboardingComplete !== false,
           activeChildId,
           children,
-          meals: Array.isArray(b.meals) ? b.meals : state.meals,
+          meals,
           symptoms: Array.isArray(b.symptoms) ? b.symptoms : state.symptoms,
         };
       }
@@ -341,19 +322,109 @@ function syncToFirestore(username, action) {
   }
 }
 
+/**
+ * Firestore children + lokaler Merge + Duplikat-Bereinigung (ohne Reducer-Schleifen).
+ */
+function buildHydratedStateFromChildrenSnapshot(username, remoteList, currentState) {
+  const s = currentState;
+  if (
+    Array.isArray(remoteList)
+    && remoteList.length === 0
+    && s.children.length > 0
+  ) {
+    return null;
+  }
+
+  const merged = Array.isArray(remoteList)
+    ? remoteList.map((remote) => {
+        const local = s.children.find((c) => c.id === remote.id);
+        let out = remote;
+        if (local) {
+          out = mergeChildProfileFromLocal(local, out);
+          const lp = local?.photoUrl;
+          if (typeof lp === 'string' && lp.startsWith('data:image/')) {
+            out = { ...out, photoUrl: lp };
+          }
+          out = {
+            ...out,
+            growthMeasurements: mergeChildGrowthForSync(local, out),
+          };
+        }
+        return out;
+      })
+    : [];
+
+  let children = normalizeChildrenList(merged);
+  if (children.length === 0 && s.children.length > 0) {
+    children = s.children;
+  }
+
+  const rec = reconcileChildrenAndMeals(children, s.meals);
+  children = normalizeChildrenList(rec.children);
+  const meals = rec.meals;
+
+  let activeChildId = s.activeChildId;
+  if (!children.some((c) => c.id === activeChildId)) {
+    activeChildId = rec.primaryChildId || children[0]?.id || null;
+  }
+
+  if (rec.changed && username && Array.isArray(rec.removedIds)) {
+    for (const rid of rec.removedIds) {
+      try {
+        removeChildFromDb(username, rid);
+      } catch (e) {
+        console.warn('HabEat: Kind konnte nicht aus Firestore entfernt werden.', rid, e);
+      }
+    }
+  }
+
+  const primary = children.find((c) => c.id === rec.primaryChildId) || children[0];
+  if (rec.changed && username && primary) {
+    try {
+      saveChild(username, primary);
+    } catch (e) {
+      console.warn('HabEat: zusammengeführtes Kind konnte nicht gespeichert werden.', e);
+    }
+    for (const m of meals) {
+      if (typeof m?.id === 'string' && m.id) {
+        try {
+          saveMeal(username, m);
+        } catch (e) {
+          console.warn('HabEat: Mahlzeit konnte nicht gespeichert werden.', m.id, e);
+        }
+      }
+    }
+  }
+
+  const onboardingComplete = children.length > 0 ? true : s.onboardingComplete;
+
+  return {
+    children,
+    meals,
+    symptoms: s.symptoms,
+    activeChildId,
+    onboardingComplete,
+  };
+}
+
 export function AppProvider({ children: reactChildren }) {
   const [state, rawDispatch] = useReducer(appReducer, initialState, (init) => {
     const saved = localStorage.getItem('habeat-state');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        const children = normalizeChildrenList(parsed.children);
+        let children = normalizeChildrenList(parsed.children);
+        let meals = Array.isArray(parsed.meals) ? parsed.meals : [];
+        const rec = reconcileChildrenAndMeals(children, meals);
+        children = normalizeChildrenList(rec.children);
+        meals = rec.meals;
         const activeChildId = children.some(c => c.id === parsed.activeChildId)
           ? parsed.activeChildId
-          : children[0]?.id || null;
+          : (rec.primaryChildId || children[0]?.id || null);
 
-        const merged = { ...init, ...parsed, children, activeChildId };
+        const merged = { ...init, ...parsed, children, meals, activeChildId };
         merged.adultNutrition = merged.loggedIn && isAdultNutritionUser(merged.currentUser);
+        if (children.length > 0) merged.onboardingComplete = true;
         return merged;
       } catch {
         return init;
@@ -364,6 +435,11 @@ export function AppProvider({ children: reactChildren }) {
 
   const firestoreListening = useRef(false);
   const triedBackupRestore = useRef(false);
+  const stateRef = useRef(state);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   // Wrapped dispatch that also syncs to Firestore
   const dispatch = (action) => {
@@ -439,6 +515,7 @@ export function AppProvider({ children: reactChildren }) {
     firestoreListening.current = true;
 
     const unsub = subscribeToUserData(state.currentUser, (type, data) => {
+      const snapUser = stateRef.current.currentUser;
       switch (type) {
         case 'settings':
           rawDispatch({
@@ -451,12 +528,19 @@ export function AppProvider({ children: reactChildren }) {
             },
           });
           break;
-        case 'children':
-          rawDispatch({
-            type: 'SYNC_FIRESTORE',
-            payload: { children: normalizeChildrenList(data) },
-          });
+        case 'children': {
+          const hydrated = buildHydratedStateFromChildrenSnapshot(
+            snapUser,
+            data,
+            stateRef.current,
+          );
+          if (hydrated) {
+            rawDispatch({ type: 'APP_HYDRATE', payload: hydrated });
+          } else {
+            rawDispatch({ type: 'SYNC_FIRESTORE', payload: { firestoreReady: true } });
+          }
           break;
+        }
         case 'meals':
           rawDispatch({ type: 'SYNC_FIRESTORE', payload: { meals: data } });
           break;
