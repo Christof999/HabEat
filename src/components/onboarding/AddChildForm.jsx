@@ -1,5 +1,18 @@
-import { useState } from 'react';
-import { ArrowRight, ArrowLeft, Plus, X, User, Calendar, Ruler, Weight, AlertTriangle } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import {
+  ArrowRight,
+  ArrowLeft,
+  Plus,
+  X,
+  User,
+  Calendar,
+  Ruler,
+  Weight,
+  AlertTriangle,
+  Camera,
+  Loader2,
+} from 'lucide-react';
+import { fileToDataUrl } from '../../lib/localChildPhoto';
 
 const commonAllergens = [
   'Milch', 'Ei', 'Erdnuss', 'Baumnüsse', 'Weizen', 'Soja',
@@ -19,6 +32,8 @@ export default function AddChildForm({
   title = 'Kind hinzufügen',
   subtitle = 'Erzähle uns von deinem Kind',
   submitLabel = 'Kind hinzufügen',
+  /** 'edit' zeigt zusätzlich „Speichern“ in der Kopfzeile */
+  mode = 'add',
 }) {
   const initialKnownAllergies = Array.isArray(initialChild?.knownAllergies)
     ? initialChild.knownAllergies
@@ -34,8 +49,21 @@ export default function AddChildForm({
     knownAllergies: initialKnownAllergies,
     avatarColor: initialChild?.avatarColor || avatarColors[childIndex % avatarColors.length],
   });
+  const [photoUrl, setPhotoUrl] = useState(initialChild?.photoUrl || '');
+  const [localPhotoPreview, setLocalPhotoPreview] = useState(null);
+  const [pendingPhotoFile, setPendingPhotoFile] = useState(null);
+  const [photoSaving, setPhotoSaving] = useState(false);
+  const [photoError, setPhotoError] = useState('');
+  const fileInputRef = useRef(null);
+
   const [customAllergen, setCustomAllergen] = useState('');
   const [errors, setErrors] = useState({});
+
+  useEffect(() => {
+    return () => {
+      if (localPhotoPreview) URL.revokeObjectURL(localPhotoPreview);
+    };
+  }, [localPhotoPreview]);
 
   const updateField = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
@@ -71,51 +99,180 @@ export default function AddChildForm({
     return newErrors;
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  const handlePickPhoto = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !file.type.startsWith('image/')) {
+      setPhotoError('Bitte wähle eine Bilddatei.');
+      return;
+    }
+    const maxMb = 16;
+    if (file.size > maxMb * 1024 * 1024) {
+      setPhotoError(`Das Bild darf maximal ${maxMb} MB groß sein (danach wird es verkleinert).`);
+      return;
+    }
+    setPhotoError('');
+    setPendingPhotoFile(file);
+    setLocalPhotoPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
+  };
+
+  const clearPhoto = () => {
+    setPendingPhotoFile(null);
+    setLocalPhotoPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    setPhotoUrl('');
+    setPhotoError('');
+  };
+
+  const buildChildPayload = async () => {
     const newErrors = validate();
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
-      return;
+      return null;
     }
-    onAdd({
+
+    const id = initialChild?.id || crypto.randomUUID();
+    let finalPhotoUrl = photoUrl || null;
+
+    if (pendingPhotoFile) {
+      setPhotoSaving(true);
+      setPhotoError('');
+      try {
+        finalPhotoUrl = await fileToDataUrl(pendingPhotoFile);
+        setPhotoUrl(finalPhotoUrl);
+        setPendingPhotoFile(null);
+        setLocalPhotoPreview((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return null;
+        });
+      } catch (err) {
+        console.error('Avatar local save failed:', err);
+        setPhotoError(err?.message || 'Bild konnte nicht gespeichert werden.');
+        setPhotoSaving(false);
+        return null;
+      }
+      setPhotoSaving(false);
+    }
+
+    return {
       ...form,
-      id: initialChild?.id || crypto.randomUUID(),
+      id,
+      photoUrl: finalPhotoUrl,
       height: form.height ? parseFloat(form.height) : null,
       weight: form.weight ? parseFloat(form.weight) : null,
       createdAt: initialChild?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    });
+    };
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const payload = await buildChildPayload();
+    if (payload) onAdd(payload);
+  };
+
+  const handleHeaderSave = async () => {
+    const payload = await buildChildPayload();
+    if (payload) onAdd(payload);
   };
 
   return (
     <div className="min-h-screen bg-warm-50">
       {/* Header */}
-      <div className="sticky top-0 bg-warm-50/80 backdrop-blur-sm z-10 px-6 py-4 flex items-center gap-3">
+      <div className="sticky top-0 bg-warm-50/80 backdrop-blur-sm z-30 px-6 py-4 flex items-center gap-3">
         <button
+          type="button"
           onClick={onBack}
-          className="w-10 h-10 rounded-xl bg-white shadow-sm flex items-center justify-center cursor-pointer"
+          className="w-10 h-10 rounded-xl bg-white shadow-sm flex items-center justify-center cursor-pointer shrink-0"
         >
           <ArrowLeft className="w-5 h-5 text-gray-600" />
         </button>
-        <div>
+        <div className="min-w-0 flex-1">
           <h2 className="font-bold text-lg text-gray-800">{title}</h2>
           <p className="text-sm text-gray-500">{subtitle}</p>
         </div>
+        {mode === 'edit' && (
+          <button
+            type="button"
+            onClick={handleHeaderSave}
+            disabled={photoSaving}
+            className="shrink-0 px-4 py-2 rounded-xl bg-sage-500 hover:bg-sage-600 disabled:opacity-60 text-white text-sm font-semibold cursor-pointer transition-colors"
+          >
+            {photoSaving ? (
+              <span className="flex items-center gap-1.5">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Speichern
+              </span>
+            ) : (
+              'Speichern'
+            )}
+          </button>
+        )}
       </div>
 
       <form onSubmit={handleSubmit} className="px-6 pb-32 space-y-6">
-        {/* Avatar Preview */}
-        <div className="flex justify-center">
-          <div className={`w-20 h-20 rounded-full ${form.avatarColor} flex items-center justify-center shadow-sm`}>
-            {form.name ? (
-              <span className="text-2xl font-bold text-gray-700">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handlePickPhoto}
+        />
+
+        {/* Avatar Preview + Foto */}
+        <div className="flex flex-col items-center gap-3">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={photoSaving}
+            className={`relative w-24 h-24 rounded-full ${form.avatarColor} flex items-center justify-center shadow-sm overflow-hidden ring-2 ring-white cursor-pointer disabled:opacity-60`}
+          >
+            {localPhotoPreview || photoUrl ? (
+              <img
+                src={localPhotoPreview || photoUrl}
+                alt=""
+                className="w-full h-full object-cover"
+              />
+            ) : form.name ? (
+              <span className="text-3xl font-bold text-gray-700">
                 {(form.name?.trim()?.[0] || '?').toUpperCase()}
               </span>
             ) : (
-              <User className="w-8 h-8 text-gray-400" />
+              <User className="w-10 h-10 text-gray-400" />
+            )}
+            <span className="absolute bottom-1 right-1 w-8 h-8 rounded-full bg-white shadow flex items-center justify-center border border-sage-100">
+              <Camera className="w-4 h-4 text-sage-600" />
+            </span>
+          </button>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={photoSaving}
+              className="text-sm font-medium text-sage-600 hover:text-sage-700 cursor-pointer disabled:opacity-50"
+            >
+              Foto wählen
+            </button>
+            {(localPhotoPreview || photoUrl) && (
+              <button
+                type="button"
+                onClick={clearPhoto}
+                disabled={photoSaving}
+                className="text-sm text-gray-500 hover:text-rose-600 cursor-pointer disabled:opacity-50"
+              >
+                Foto entfernen
+              </button>
             )}
           </div>
+          {photoError && <p className="text-rose-500 text-xs text-center px-2">{photoError}</p>}
+          <p className="text-xs text-gray-400 text-center max-w-xs">
+            Profilbilder werden nur auf diesem Gerät gespeichert (Browser-Speicher).
+          </p>
         </div>
 
         {/* Avatar Color Picker */}
@@ -265,13 +422,23 @@ export default function AddChildForm({
         </div>
 
         {/* Submit Button */}
-        <div className="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-warm-50 via-warm-50 to-transparent safe-bottom">
+        <div className="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-warm-50 via-warm-50 to-transparent safe-bottom z-50 max-w-lg mx-auto">
           <button
             type="submit"
-            className="w-full bg-sage-500 hover:bg-sage-600 text-white font-semibold py-4 rounded-2xl transition-colors flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+            disabled={photoSaving}
+            className="w-full bg-sage-500 hover:bg-sage-600 disabled:opacity-60 text-white font-semibold py-4 rounded-2xl transition-colors flex items-center justify-center gap-2 shadow-sm cursor-pointer"
           >
-            {submitLabel}
-            <ArrowRight className="w-5 h-5" />
+            {photoSaving ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                Wird gespeichert…
+              </>
+            ) : (
+              <>
+                {submitLabel}
+                <ArrowRight className="w-5 h-5" />
+              </>
+            )}
           </button>
         </div>
       </form>

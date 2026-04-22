@@ -140,7 +140,18 @@ function appReducer(state, action) {
     case 'SYNC_FIRESTORE':
       {
         if (Object.prototype.hasOwnProperty.call(action.payload || {}, 'children')) {
-          const children = normalizeChildrenList(action.payload.children);
+          const remoteList = action.payload.children;
+          const merged = Array.isArray(remoteList)
+            ? remoteList.map((remote) => {
+                const local = state.children.find((c) => c.id === remote.id);
+                const lp = local?.photoUrl;
+                if (typeof lp === 'string' && lp.startsWith('data:image/')) {
+                  return { ...remote, photoUrl: lp };
+                }
+                return remote;
+              })
+            : [];
+          const children = normalizeChildrenList(merged);
           const activeChildId = children.some(c => c.id === state.activeChildId)
             ? state.activeChildId
             : children[0]?.id || null;

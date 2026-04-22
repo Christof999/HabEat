@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { X, Clock, Flame, Droplets, Wheat, Beef, Pencil, Save } from 'lucide-react';
 import { useApp } from '../../contexts/AppContext';
+import { breastCaloriesFromDurationMin } from '../../lib/breastfeedingCalories';
 
 export default function MealDetailModal({ meal, onClose }) {
   const { state, dispatch } = useApp();
@@ -76,14 +77,21 @@ export default function MealDetailModal({ meal, onClose }) {
       };
     }
 
+    let breastDurationMin = null;
     if (currentMeal.feedingType === 'breastfeeding') {
+      breastDurationMin = parseNullableNumber(form.breastDurationMin);
       feedingDetails = {
         ...feedingDetails,
-        durationMin: parseNullableNumber(form.breastDurationMin),
+        durationMin: breastDurationMin,
         side: form.breastSide,
         comment: form.breastComment.trim(),
       };
     }
+
+    const calories =
+      currentMeal.feedingType === 'breastfeeding' && breastDurationMin != null && breastDurationMin > 0
+        ? breastCaloriesFromDurationMin(breastDurationMin)
+        : parseNullableNumber(form.calories);
 
     dispatch({
       type: 'UPDATE_MEAL',
@@ -92,7 +100,7 @@ export default function MealDetailModal({ meal, onClose }) {
         title: form.title.trim() || currentMeal.title,
         summary: form.summary.trim(),
         ingredients,
-        calories: parseNullableNumber(form.calories),
+        calories,
         protein: parseNullableNumber(form.protein),
         carbs: parseNullableNumber(form.carbs),
         fat: parseNullableNumber(form.fat),

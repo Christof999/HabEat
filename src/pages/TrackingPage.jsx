@@ -5,6 +5,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
+import { breastCaloriesFromDurationMin, BREASTFEEDING_KCAL_PER_MINUTE } from '../lib/breastfeedingCalories';
 
 export default function TrackingPage() {
   const { state, dispatch, activeChild } = useApp();
@@ -158,7 +159,11 @@ export default function TrackingPage() {
       return;
     }
 
-    const calories = roundOne(durationMin * 1.3);
+    const calories = breastCaloriesFromDurationMin(durationMin);
+    if (calories == null) {
+      setAnalyzeError('Ungültige Still-Dauer.');
+      return;
+    }
 
     setImagePreview(null);
     setAnalyzeError(null);
@@ -511,6 +516,15 @@ export default function TrackingPage() {
                 placeholder="Dauer (Minuten)"
                 className="w-full px-3 py-2 rounded-xl bg-warm-50 border border-sage-200 text-sm"
               />
+              {parseNumber(breastForm.durationMin) > 0 && (
+                <p className="text-xs text-gray-500">
+                  Geschätzte Kalorien für das Kind: ca.{' '}
+                  <span className="font-medium text-gray-700">
+                    {breastCaloriesFromDurationMin(parseNumber(breastForm.durationMin))} kcal
+                  </span>{' '}
+                  (Richtwert ca. {BREASTFEEDING_KCAL_PER_MINUTE} kcal/min)
+                </p>
+              )}
               <select
                 value={breastForm.side}
                 onChange={e => setBreastForm(prev => ({ ...prev, side: e.target.value }))}
