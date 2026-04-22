@@ -31,9 +31,10 @@ function normalizeChild(child) {
   if (!child || typeof child !== 'object') return null;
 
   const safeId = typeof child.id === 'string' ? child.id.trim() : '';
-  const safeName = typeof child.name === 'string' ? child.name.trim() : '';
+  const rawName = typeof child.name === 'string' ? child.name.trim() : '';
+  const safeName = rawName || 'Kind';
 
-  if (!safeId || !safeName) return null;
+  if (!safeId) return null;
 
   const knownAllergies = Array.isArray(child?.knownAllergies)
     ? child.knownAllergies
